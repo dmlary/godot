@@ -94,91 +94,103 @@ void GridMapEditor::_menu_option(int p_option) {
 		} break;
 		case MENU_OPTION_CURSOR_ROTATE_Y: {
 			Basis r;
+			real_t rotation = Math_PI / (node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? 2.0 : 3.0);
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(0, 1, 0), -Math_PI / 2.0);
+				r.rotate(Vector3(0, 1, 0), -rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(0, 1, 0), -Math_PI / 2.0);
+			r.rotate(Vector3(0, 1, 0), -rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;
 		case MENU_OPTION_CURSOR_ROTATE_X: {
 			Basis r;
+			real_t rotation = node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? (Math_PI / 2.0) : Math_PI;
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(1, 0, 0), -Math_PI / 2.0);
+				r.rotate(Vector3(1, 0, 0), -rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(1, 0, 0), -Math_PI / 2.0);
+			r.rotate(Vector3(1, 0, 0), -rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;
 		case MENU_OPTION_CURSOR_ROTATE_Z: {
 			Basis r;
+			real_t rotation = node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? (Math_PI / 2.0) : Math_PI;
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(0, 0, 1), -Math_PI / 2.0);
+				r.rotate(Vector3(0, 0, 1), -rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(0, 0, 1), -Math_PI / 2.0);
+			r.rotate(Vector3(0, 0, 1), -rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;
 		case MENU_OPTION_CURSOR_BACK_ROTATE_Y: {
 			Basis r;
+			real_t rotation = Math_PI / (node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? 2.0 : 3.0);
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(0, 1, 0), Math_PI / 2.0);
+				r.rotate(Vector3(0, 1, 0), rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(0, 1, 0), Math_PI / 2.0);
+			r.rotate(Vector3(0, 1, 0), rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;
 		case MENU_OPTION_CURSOR_BACK_ROTATE_X: {
 			Basis r;
+			real_t rotation = node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? (Math_PI / 2.0) : Math_PI;
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(1, 0, 0), Math_PI / 2.0);
+				r.rotate(Vector3(1, 0, 0), rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(1, 0, 0), Math_PI / 2.0);
+			r.rotate(Vector3(1, 0, 0), rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;
 		case MENU_OPTION_CURSOR_BACK_ROTATE_Z: {
 			Basis r;
+			real_t rotation = node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? (Math_PI / 2.0) : Math_PI;
+
 			if (input_action == INPUT_PASTE) {
 				r = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-				r.rotate(Vector3(0, 0, 1), Math_PI / 2.0);
+				r.rotate(Vector3(0, 0, 1), rotation);
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 				break;
 			}
 
 			r = node->get_basis_with_orthogonal_index(cursor_rot);
-			r.rotate(Vector3(0, 0, 1), Math_PI / 2.0);
+			r.rotate(Vector3(0, 0, 1), rotation);
 			cursor_rot = node->get_orthogonal_index_from_basis(r);
 			_update_cursor_transform();
 		} break;

@@ -481,7 +481,8 @@ int GridMap::get_cell_item_orientation(const Vector3i &p_position) const {
 	return cell_map[key].rot;
 }
 
-static const Basis _ortho_bases[24] = {
+#define ORTHO_BASES_SQUARE_LEN 24
+static const Basis _ortho_bases_square[ORTHO_BASES_SQUARE_LEN] = {
 	Basis(1, 0, 0, 0, 1, 0, 0, 0, 1),
 	Basis(0, -1, 0, 1, 0, 0, 0, 0, 1),
 	Basis(-1, 0, 0, 0, -1, 0, 0, 0, 1),
@@ -508,6 +509,30 @@ static const Basis _ortho_bases[24] = {
 	Basis(0, -1, 0, 0, 0, -1, 1, 0, 0)
 };
 
+// sqrt(3)/2 used for hex cell rotation
+#define SQRT3_2 (Math_SQRT3 / 2.0)
+
+// hex cells can be rotated six different ways around the y-axis.  Additionally,
+// they can be flipped upside down.
+#define ORTHO_BASES_HEX_LEN 12
+static const Basis _ortho_bases_hex[ORTHO_BASES_HEX_LEN] = {
+	// rotate around y axis, y up
+	Basis(1, 0, 0, 0, 1, 0, 0, 0, 1),
+	Basis(0.5, 0, SQRT3_2, 0, 1, 0, -SQRT3_2, 0, 0.5),
+	Basis(-0.5, 0, SQRT3_2, 0, 1, 0, -SQRT3_2, 0, -0.5),
+	Basis(-1, 0, 0, 0, 1, 0, 0, 0, -1),
+	Basis(0.5, 0, -SQRT3_2, 0, 1, 0, SQRT3_2, 0, 0.5),
+	Basis(-0.5, 0, -SQRT3_2, 0, 1, 0, SQRT3_2, 0, -0.5),
+
+	// flip across x to make y down, and rotate
+	Basis(1, 0, 0, 0, -1, 0, 0, 0, -1),
+	Basis(0.5, 0, -SQRT3_2, 0, -1, 0, -SQRT3_2, 0, -0.5),
+	Basis(-0.5, 0, -SQRT3_2, 0, -1, 0, -SQRT3_2, 0, 0.5),
+	Basis(-1, 0, 0, 0, -1, 0, 0, 0, 1),
+	Basis(-0.5, 0, SQRT3_2, 0, -1, 0, SQRT3_2, 0, 0.5),
+	Basis(0.5, 0, SQRT3_2, 0, -1, 0, SQRT3_2, 0, -0.5),
+};
+
 Basis GridMap::get_cell_item_basis(const Vector3i &p_position) const {
 	int orientation = get_cell_item_orientation(p_position);
 
@@ -519,31 +544,78 @@ Basis GridMap::get_cell_item_basis(const Vector3i &p_position) const {
 }
 
 Basis GridMap::get_basis_with_orthogonal_index(int p_index) const {
-	ERR_FAIL_INDEX_V(p_index, 24, Basis());
+	if (cell_shape == CELL_SHAPE_SQUARE) {
+		ERR_FAIL_INDEX_V(p_index, ORTHO_BASES_SQUARE_LEN, Basis());
+		return _ortho_bases_square[p_index];
+	} else {
+		ERR_FAIL_INDEX_V(p_index, ORTHO_BASES_HEX_LEN, Basis());
+		return _ortho_bases_hex[p_index];
+	}
+}
 
-	return _ortho_bases[p_index];
+// for hex cells, round a value within a Basis to -sqrt(3)/2, 0.0, sqrt(3)/2
+static inline real_t round_sqrt3_2(real_t v) {
+	if (v < -(SQRT3_2 / 2)) {
+		return -SQRT3_2;
+	} else if (v < SQRT3_2 / 2) {
+		return 0;
+	} else {
+		return SQRT3_2;
+	}
+}
+
+// for hex cells, round a value within a Basis to -1.0, -0.5, 0.5, 1.0
+static inline real_t round_one_or_half(real_t v) {
+	if (v < -0.75) {
+		return -1.0;
+	} else if (v < 0.0) {
+		return -0.5;
+	} else if (v < 0.75) {
+		return 0.50;
+	} else {
+		return 1.0;
+	}
 }
 
 int GridMap::get_orthogonal_index_from_basis(const Basis &p_basis) const {
 	Basis orth = p_basis;
-	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 3; j++) {
-			real_t v = orth[i][j];
-			if (v > 0.5) {
-				v = 1.0;
-			} else if (v < -0.5) {
-				v = -1.0;
-			} else {
-				v = 0;
+	if (cell_shape == CELL_SHAPE_SQUARE) {
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < 3; j++) {
+				real_t v = orth[i][j];
+				if (v > 0.5) {
+					v = 1.0;
+				} else if (v < -0.5) {
+					v = -1.0;
+				} else {
+					v = 0;
+				}
+
+				orth[i][j] = v;
 			}
-
-			orth[i][j] = v;
 		}
-	}
+		for (int i = 0; i < ORTHO_BASES_SQUARE_LEN; i++) {
+			if (_ortho_bases_square[i] == orth) {
+				return i;
+			}
+		}
+	} else {
+		orth[0][0] = round_one_or_half(orth[0][0]);
+		orth[0][1] = 0;
+		orth[0][2] = round_sqrt3_2(orth[0][2]);
 
-	for (int i = 0; i < 24; i++) {
-		if (_ortho_bases[i] == orth) {
-			return i;
+		orth[1][0] = 0;
+		orth[1][1] = orth[1][1] < 0 ? -1 : 1;
+		orth[1][2] = 0;
+
+		orth[2][0] = round_sqrt3_2(orth[2][0]);
+		orth[2][1] = 0;
+		orth[2][2] = round_one_or_half(orth[2][2]);
+
+		for (int i = 0; i < ORTHO_BASES_HEX_LEN; i++) {
+			if (_ortho_bases_hex[i] == orth) {
+				return i;
+			}
 		}
 	}
 
@@ -873,7 +945,11 @@ bool GridMap::_octant_update(const OctantKey &p_key) {
 		Vector3 map_pos = Vector3(E.x, E.y, E.z);
 		Transform3D xform;
 
-		xform.basis = _ortho_bases[c.rot];
+		if (cell_shape == CELL_SHAPE_SQUARE) {
+			xform.basis = _ortho_bases_square[c.rot];
+		} else {
+			xform.basis = _ortho_bases_hex[c.rot];
+		}
 		xform.set_origin(map_to_local(map_pos));
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 		if (baked_meshes.size() == 0) {
@@ -1477,7 +1553,11 @@ Array GridMap::get_meshes() const {
 
 		Transform3D xform;
 
-		xform.basis = _ortho_bases[E.value.rot];
+		if (cell_shape == CELL_SHAPE_SQUARE) {
+			xform.basis = _ortho_bases_square[E.value.rot];
+		} else {
+			xform.basis = _ortho_bases_hex[E.value.rot];
+		}
 
 		xform.set_origin(cellpos * cell_size + ofs);
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
@@ -1532,7 +1612,11 @@ void GridMap::make_baked_meshes(bool p_gen_lightmap_uv, float p_lightmap_uv_texe
 
 		Transform3D xform;
 
-		xform.basis = _ortho_bases[E.value.rot];
+		if (cell_shape == CELL_SHAPE_SQUARE) {
+			xform.basis = _ortho_bases_square[E.value.rot];
+		} else {
+			xform.basis = _ortho_bases_hex[E.value.rot];
+		}
 		xform.set_origin(cellpos * cell_size + ofs);
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 
