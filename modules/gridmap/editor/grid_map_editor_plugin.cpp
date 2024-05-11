@@ -1017,19 +1017,12 @@ void GridMapEditor::_draw_floor_grid(RID p_mesh_id, int p_floor) {
 		shape_points.append(Vector2(0.5, 0.5));
 		shape_points.append(Vector2(-0.5, 0.5));
 	} else {
-		float overlap = 0.25;
-		shape_points.append(Vector2(0.0, -0.5));
-		shape_points.append(Vector2(-0.5, overlap - 0.5));
-		shape_points.append(Vector2(-0.5, 0.5 - overlap));
-		shape_points.append(Vector2(0.0, 0.5));
-		shape_points.append(Vector2(0.5, 0.5 - overlap));
-		shape_points.append(Vector2(0.5, overlap - 0.5));
-
-		if (node->get_cell_offset_axis() == GridMap::CELL_OFFSET_AXIS_VERTICAL) {
-			for (int i = 0; i < shape_points.size(); i++) {
-				shape_points.write[i] = Vector2(shape_points[i].y, shape_points[i].x);
-			}
-		}
+		shape_points.append(Vector2(0.0, -1.0));
+		shape_points.append(Vector2(-SQRT3_2, -0.5));
+		shape_points.append(Vector2(-SQRT3_2, 0.5));
+		shape_points.append(Vector2(0.0, 1.0));
+		shape_points.append(Vector2(SQRT3_2, 0.5));
+		shape_points.append(Vector2(SQRT3_2, -0.5));
 	}
 
 	Vector3 cell_size = node->get_cell_size();

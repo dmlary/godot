@@ -35,6 +35,10 @@
 #include "scene/resources/mesh_library.h"
 #include "scene/resources/multimesh.h"
 
+// SQRT(3)/2; used both in the editor and the GridMap.  Due to the division, it
+// didn't fit the pattern of other Math_SQRTN defines, so I'm putting it here.
+#define SQRT3_2 0.8660254037844386
+
 //heh heh, godotsphir!! this shares no code and the design is completely different with previous projects i've done..
 //should scale better with hardware that supports instancing
 
@@ -48,22 +52,6 @@ public:
 		CELL_SHAPE_SQUARE,
 		CELL_SHAPE_HEXAGON,
 		CELL_SHAPE_MAX,
-	};
-
-	enum CellLayout {
-		CELL_LAYOUT_STACKED,
-		CELL_LAYOUT_STACKED_OFFSET,
-		CELL_LAYOUT_STAIRS_RIGHT,
-		CELL_LAYOUT_STAIRS_DOWN,
-		CELL_LAYOUT_DIAMOND_RIGHT,
-		CELL_LAYOUT_DIAMOND_DOWN,
-		CELL_LAYOUT_MAX,
-	};
-
-	enum CellOffsetAxis {
-		CELL_OFFSET_AXIS_HORIZONTAL,
-		CELL_OFFSET_AXIS_VERTICAL,
-		CELL_OFFSET_AXIS_MAX,
 	};
 
 private:
@@ -184,8 +172,6 @@ private:
 
 	bool _in_tree = false;
 	CellShape cell_shape = CELL_SHAPE_SQUARE;
-	CellLayout cell_layout = CELL_LAYOUT_STACKED;
-	CellOffsetAxis cell_offset_axis = CELL_OFFSET_AXIS_HORIZONTAL;
 	Vector3 cell_size = Vector3(2, 2, 2);
 	int octant_size = 8;
 	bool center_x = true;
@@ -248,7 +234,6 @@ protected:
 	bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
 	void _get_property_list(List<PropertyInfo> *p_list) const;
-	void _validate_property(PropertyInfo &p_property) const;
 
 	void _notification(int p_what);
 	void _update_visibility();
@@ -290,12 +275,6 @@ public:
 
 	void set_cell_shape(CellShape p_shape);
 	CellShape get_cell_shape() const;
-
-	void set_cell_layout(CellLayout p_layout);
-	CellLayout get_cell_layout() const;
-
-	void set_cell_offset_axis(CellOffsetAxis p_offset_axis);
-	CellOffsetAxis get_cell_offset_axis() const;
 
 	void set_cell_size(const Vector3 &p_size);
 	Vector3 get_cell_size() const;
@@ -341,7 +320,5 @@ public:
 };
 
 VARIANT_ENUM_CAST(GridMap::CellShape);
-VARIANT_ENUM_CAST(GridMap::CellLayout);
-VARIANT_ENUM_CAST(GridMap::CellOffsetAxis);
 
 #endif // GRID_MAP_H
