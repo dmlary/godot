@@ -370,9 +370,17 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	from = local_xform.xform(from);
 	normal = local_xform.basis.xform(normal).normalized();
 
+	// create a plane at the bottom of the floor to raycast against.  Note we
+	// move the plane up a small amount to limit floating point errors causing
+	// the raycast from falling into the next lower floor.  This adjustment was
+	// necessary as it's not possible to just override the floor level from
+	// GridMap::local_to_map() for hex shaped cells.  They use an axial
+	// coordinate scheme that requires more work when setting x/z plane values.
+	real_t cell_depth = node->get_cell_size()[edit_axis];
 	Plane p;
 	p.normal[edit_axis] = 1.0;
-	p.d = edit_floor[edit_axis] * node->get_cell_size()[edit_axis];
+	p.d = edit_floor[edit_axis] * cell_depth;
+	p.d += cell_depth * 0.5;
 
 	Vector3 inters;
 	if (!p.intersects_segment(from, from + normal * settings_pick_distance->get_value(), &inters)) {
@@ -389,7 +397,6 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	}
 
 	Vector3 cell = node->local_to_map(inters);
-	cell[edit_axis] = edit_floor[edit_axis];
 
 	RS::get_singleton()->instance_set_transform(grid_instance[edit_axis], node->get_global_transform() * edit_grid_xform);
 
