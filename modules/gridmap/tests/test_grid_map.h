@@ -99,15 +99,18 @@ TEST_CASE("[SceneTree][GridMap] map_to_local() for hex cells") {
 	map.set_cell_shape(GridMap::CELL_SHAPE_HEXAGON);
 	map.set_cell_size(Vector3(1.0, 1.0, 1.0));
 
-	CHECK(map.map_to_local(Vector3i(0, 0, 0)) == Vector3(0, 0, 0));
-	CHECK(map.map_to_local(Vector3i(-1, 0, 2)) == Vector3(0, 0, 3));
-	CHECK(map.map_to_local(Vector3i(1, 0, -2)) == Vector3(0, 0, -3));
-	CHECK(map.map_to_local(Vector3i(1, 0, 0)) == Vector3(Math_SQRT3, 0, 0));
-	CHECK(map.map_to_local(Vector3i(-1, 0, 0)) == Vector3(-Math_SQRT3, 0, 0));
-	CHECK(map.map_to_local(Vector3i(0, 0, 1)) == Vector3(Math_SQRT3 / 2, 0, 1.5));
-	CHECK(map.map_to_local(Vector3i(-1, 0, 1)) == Vector3(-Math_SQRT3 / 2, 0, 1.5));
-	CHECK(map.map_to_local(Vector3i(-1, 0, 1)) == Vector3(-Math_SQRT3 / 2, 0, 1.5));
-	CHECK(map.map_to_local(Vector3i(0, 0, -1)) == Vector3(-Math_SQRT3 / 2, 0, -1.5));
+	CHECK(map.map_to_local(Vector3i(0, 0, 0)) == Vector3(0, 0.5, 0));
+	CHECK(map.map_to_local(Vector3i(-1, 0, 2)) == Vector3(0, 0.5, 3));
+	CHECK(map.map_to_local(Vector3i(1, 0, -2)) == Vector3(0, 0.5, -3));
+	CHECK(map.map_to_local(Vector3i(1, 0, 0)) == Vector3(Math_SQRT3, 0.5, 0));
+	CHECK(map.map_to_local(Vector3i(-1, 0, 0)) == Vector3(-Math_SQRT3, 0.5, 0));
+	CHECK(map.map_to_local(Vector3i(0, 0, 1)) == Vector3(Math_SQRT3 / 2, 0.5, 1.5));
+	CHECK(map.map_to_local(Vector3i(-1, 0, 1)) == Vector3(-Math_SQRT3 / 2, 0.5, 1.5));
+	CHECK(map.map_to_local(Vector3i(-1, 0, 1)) == Vector3(-Math_SQRT3 / 2, 0.5, 1.5));
+	CHECK(map.map_to_local(Vector3i(0, 0, -1)) == Vector3(-Math_SQRT3 / 2, 0.5, -1.5));
+
+	CHECK(map.map_to_local(Vector3i(0, 1, 0)) == Vector3(0, 1.5, 0));
+	CHECK(map.map_to_local(Vector3i(0, -1, 0)) == Vector3(0, -0.5, 0));
 }
 
 } // namespace TestGridMap

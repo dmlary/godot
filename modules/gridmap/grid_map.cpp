@@ -624,8 +624,8 @@ Vector3i GridMap::local_to_map(const Vector3 &p_local_position) const {
 }
 
 Vector3 GridMap::map_to_local(const Vector3i &p_map_position) const {
+	Vector3 offset = _get_offset();
 	if (cell_shape != CELL_SHAPE_HEXAGON) {
-		Vector3 offset = _get_offset();
 		Vector3 local_position(
 				p_map_position.x * cell_size.x + offset.x,
 				p_map_position.y * cell_size.y + offset.y,
@@ -637,7 +637,7 @@ Vector3 GridMap::map_to_local(const Vector3i &p_map_position) const {
 	// https://www.redblobgames.com/grids/hexagons/#hex-to-pixel
 	Vector3 local;
 	local.x = cell_size.x * (Math_SQRT3 * p_map_position.x + SQRT3_2 * p_map_position.z);
-	local.y = p_map_position.y * cell_size.y;
+	local.y = p_map_position.y * cell_size.y + offset.y;
 	local.z = cell_size.x * (3.0 / 2 * p_map_position.z);
 	return local;
 }
