@@ -1009,7 +1009,7 @@ void GridMapEditor::update_grid() {
 	updating = false;
 }
 
-void GridMapEditor::_draw_floor_grid(RID p_mesh_id, int p_floor) {
+void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
 	Vector<Vector2> shape_points;
 	if (node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE) {
 		shape_points.append(Vector2(-0.5, -0.5));
@@ -1032,7 +1032,7 @@ void GridMapEditor::_draw_floor_grid(RID p_mesh_id, int p_floor) {
 
 	for (int x = -GRID_CURSOR_SIZE; x <= GRID_CURSOR_SIZE; x++) {
 		for (int z = -GRID_CURSOR_SIZE; z <= GRID_CURSOR_SIZE; z++) {
-			Vector3 center = node->map_to_local(Vector3(x, p_floor, z));
+			Vector3 center = node->map_to_local(Vector3(x, 0, z));
 
 			for (int i = 1; i < shape_points.size(); i++) {
 				grid_points.append(center + Vector3(shape_points[i - 1].x * cell_size.x, 0, shape_points[i - 1].y * cell_size.z));
@@ -1102,7 +1102,7 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 	}
 
 	_draw_plane_grid(grid[0], Vector3(0, 1, 0), Vector3(0, 0, 1));
-	_draw_floor_grid(grid[1], edit_floor[1]);
+	_draw_floor_grid(grid[1]);
 	_draw_plane_grid(grid[2], Vector3(1, 0, 0), Vector3(0, 1, 0));
 }
 
