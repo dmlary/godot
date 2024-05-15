@@ -31,6 +31,7 @@
 #include "grid_map.h"
 
 #include "core/core_string_names.h"
+#include "core/error/error_macros.h"
 #include "core/io/marshalls.h"
 #include "scene/resources/mesh_library.h"
 #include "scene/resources/physics_material.h"
@@ -276,8 +277,15 @@ void GridMap::set_cell_shape(CellShape p_shape) {
 		return;
 	}
 	cell_shape = p_shape;
+
+	// if we switch to hex cells, make sure to change z & x coords to match
+	if (cell_shape == CELL_SHAPE_HEXAGON) {
+		cell_size.z = cell_size.x;
+	}
+
 	notify_property_list_changed();
 	_recreate_octant_data();
+	emit_signal(SNAME("cell_shape_changed"), cell_shape);
 }
 
 GridMap::CellShape GridMap::get_cell_shape() const {
@@ -605,6 +613,18 @@ static inline Vector2i axial_round(real_t q_in, real_t r_in) {
 	return Vector2i(q, r);
 }
 
+// convert axial hex coordinates to offset coordinates
+// https://www.redblobgames.com/grids/hexagons/#conversions-offset
+static inline Vector3i axial_to_oddr(Vector3i axial) {
+	int x = axial.x + (axial.z - (axial.z & 1)) / 2;
+	return Vector3i(x, axial.y, axial.z);
+}
+
+static inline Vector3i oddr_to_axial(Vector3i oddr) {
+	int q = oddr.x - (oddr.z - (oddr.z & 1)) / 2;
+	return Vector3i(q, oddr.y, oddr.z);
+}
+
 Vector3i GridMap::local_to_map(const Vector3 &p_local_position) const {
 	if (cell_shape != CELL_SHAPE_HEXAGON) {
 		Vector3 map_position = (p_local_position / cell_size).floor();
@@ -640,6 +660,146 @@ Vector3 GridMap::map_to_local(const Vector3i &p_map_position) const {
 	local.y = p_map_position.y * cell_size.y + offset.y;
 	local.z = cell_size.x * (3.0 / 2 * p_map_position.z);
 	return local;
+}
+
+TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
+	TypedArray<Vector3i> out;
+
+	// shuffle the fields of a & b around so that a is bottom-left, b is
+	// top-right
+	if (a.x > b.x) {
+		SWAP(a.x, b.x);
+	}
+	if (a.y > b.y) {
+		SWAP(a.y, b.y);
+	}
+	if (a.z > b.z) {
+		SWAP(a.z, b.z);
+	}
+	Vector3i bottom_left = local_to_map(a);
+	Vector3i top_right = local_to_map(b);
+
+	switch (cell_shape) {
+		case CELL_SHAPE_SQUARE: {
+			// fprintf(stderr, "(%d, %d, %d) -> (%d, %d, %d)\n",
+			// 		bottom_left.x,
+			// 		bottom_left.y,
+			// 		bottom_left.z,
+			// 		top_right.x,
+			// 		top_right.y,
+			// 		top_right.z);
+			for (int z = bottom_left.z; z <= top_right.z; z++) {
+				for (int y = bottom_left.y; y <= top_right.y; y++) {
+					for (int x = bottom_left.x; x <= top_right.x; x++) {
+						// fprintf(stderr, "push (%d, %d, %d)\n", x, y, z);
+						out.push_back(Vector3i(x, y, z));
+					}
+				}
+			}
+		} break;
+		case CELL_SHAPE_HEXAGON: {
+			// fprintf(stderr, "axial (%d, %d, %d) -> (%d, %d, %d)\n",
+			// 		bottom_left.x,
+			// 		bottom_left.y,
+			// 		bottom_left.z,
+			// 		top_right.x,
+			// 		top_right.y,
+			// 		top_right.z);
+
+			// we need the x coordinate of the center of the corner cells later.
+			// grab them now before we switch coordinate systems.
+			real_t left_x_center = map_to_local(bottom_left).x;
+			real_t right_x_center = map_to_local(top_right).x;
+
+			// we're going to use a different coordinate system for this
+			// operation.  It's much easier to walk the region when we use
+			// offset coordinates.  So let's map our corners from axial to
+			// offset, then walk the region the same as the square region.
+			// We'll convert the coordinates back to axial before putting them
+			// in the array.
+			bottom_left = axial_to_oddr(bottom_left);
+			top_right = axial_to_oddr(top_right);
+			// fprintf(stderr, " oddr (%d, %d, %d) -> (%d, %d, %d)\n",
+			// 		bottom_left.x,
+			// 		bottom_left.y,
+			// 		bottom_left.z,
+			// 		top_right.x,
+			// 		top_right.y,
+			// 		top_right.z);
+
+			// Also, unlike square cells, the location of the corner of the
+			// region within a cell matters for hex cells, specifically the x
+			// coordinate.  If you pick a point anywhere within a hex cell,
+			// and draw a line down along the z-axis, that line will intercept
+			// either the cell to the southwest or southeast of the clicked
+			// cell.
+			//
+			// For both the left and right sides of the region, we need to
+			// determine which of the southwest/southeast cells fall within
+			// the region.  We do this by adjusting the x-min and x-max for the
+			// even and odd rows independently.  We use the following table to
+			// determine the modifier for the rows for both the mimimum x
+			// value (in bottom_left.x), and the maximum x value (in
+			// top_right.x).
+			//
+			// Given an x coordinate in local space:
+			// | cell z coord | x > cell_center.x | odd mod | even mod |
+			// | even         | false             |  -1     | 0        |
+			// | even         | true              |   0     | 0        |
+			// | odd          | false             |   0     | 0        |
+			// | odd          | true              |   0     | 1        |
+
+			// adjustment applied to the min x value for odd and even cells
+			int x_min_delta[2] = { 0, 0 };
+
+			// if we start on an odd row, and the region starts to the right
+			// of center, we want to skip the even cells at x == a.x.
+			if ((bottom_left.z & 1) == 1 && a.x > left_x_center) {
+				// fprintf(stderr, "a.x %.02f, center %.02f\n", a.x, left_x_center);
+				x_min_delta[0] = 1;
+			}
+			// if we start on an even row, and the region starts to the left
+			// of center, we want to include the odd cells at x = a.x - 1.
+			else if ((bottom_left.z & 1) == 0 && a.x <= left_x_center) {
+				x_min_delta[1] = -1;
+			}
+
+			// same as above, but for the max x values
+			int x_max_delta[2] = { 0, 0 };
+			if ((top_right.z & 1) == 1 && b.x > right_x_center) {
+				x_max_delta[0] = 1;
+			} else if ((top_right.z & 1) == 0 && b.x <= right_x_center) {
+				x_max_delta[1] = -1;
+			}
+			// fprintf(stdout, "x_start [%d, %d], x_end [%d, %d]\n",
+			// 		x_min_delta[0],
+			// 		x_min_delta[1],
+			// 		x_max_delta[0],
+			// 		x_max_delta[1]);
+
+			for (int z = bottom_left.z; z <= top_right.z; z++) {
+				for (int y = bottom_left.y; y <= top_right.y; y++) {
+					int min_x = bottom_left.x + x_min_delta[z & 1];
+					int max_x = top_right.x + x_max_delta[z & 1];
+					for (int x = min_x; x <= max_x; x++) {
+						Vector3i oddr = Vector3i(x, y, z);
+						Vector3i axial = oddr_to_axial(oddr);
+						// fprintf(stderr, "push (%d, %d, %d) -> (%d, %d, %d)\n",
+						// 		x, y, z,
+						// 		axial.x,
+						// 		axial.y,
+						// 		axial.z);
+						out.push_back(axial);
+					}
+				}
+			}
+
+		} break;
+		default:
+			ERR_PRINT_ED("unsupported cell shape");
+	}
+
+	return out;
 }
 
 void GridMap::_octant_transform(const OctantKey &p_key) {
@@ -1211,6 +1371,7 @@ void GridMap::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("local_to_map", "local_position"), &GridMap::local_to_map);
 	ClassDB::bind_method(D_METHOD("map_to_local", "map_position"), &GridMap::map_to_local);
+	ClassDB::bind_method(D_METHOD("local_region_to_map", "local_position_a", "local_position_b"), &GridMap::local_region_to_map);
 
 #ifndef DISABLE_DEPRECATED
 	ClassDB::bind_method(D_METHOD("resource_changed", "resource"), &GridMap::resource_changed);
@@ -1259,6 +1420,8 @@ void GridMap::_bind_methods() {
 	BIND_CONSTANT(INVALID_CELL_ITEM);
 
 	ADD_SIGNAL(MethodInfo("cell_size_changed", PropertyInfo(Variant::VECTOR3, "cell_size")));
+	ADD_SIGNAL(MethodInfo("cell_shape_changed",
+			PropertyInfo(Variant::INT, "cell_shape", PROPERTY_HINT_ENUM, "Square,Hexagon")));
 	ADD_SIGNAL(MethodInfo(CoreStringNames::get_singleton()->changed));
 }
 

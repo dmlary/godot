@@ -299,6 +299,9 @@ public:
 	Vector3i local_to_map(const Vector3 &p_local_position) const;
 	Vector3 map_to_local(const Vector3i &p_map_position) const;
 
+	TypedArray<Vector3i> map_region_to_map(Vector3i a, Vector3i b) const;
+	TypedArray<Vector3i> local_region_to_map(Vector3 a, Vector3 b) const;
+
 	void set_cell_scale(float p_scale);
 	float get_cell_scale() const;
 

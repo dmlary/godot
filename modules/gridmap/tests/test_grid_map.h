@@ -113,6 +113,147 @@ TEST_CASE("[SceneTree][GridMap] map_to_local() for hex cells") {
 	CHECK(map.map_to_local(Vector3i(0, -1, 0)) == Vector3(0, -0.5, 0));
 }
 
+TEST_CASE("[SceneTree][GridMap] map_to_local() with square cells") {
+	GridMap map;
+	map.set_cell_shape(GridMap::CELL_SHAPE_SQUARE);
+	map.set_cell_size(Vector3(1.0, 1.0, 1.0));
+
+	// even with zero volume, we'll include the single cell we are within.
+	TypedArray<Vector3i> cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(0, 0, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.size() == 1);
+
+	// three cells along the x-axis
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(2, 0, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(1, 0, 0)));
+	CHECK(cells.has(Vector3i(2, 0, 0)));
+	CHECK(cells.size() == 3);
+
+	// three cells along the y-axis
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(0, 2, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 1, 0)));
+	CHECK(cells.has(Vector3i(0, 2, 0)));
+	CHECK(cells.size() == 3);
+
+	// three cells along the z-axis
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(0, 0, 2));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 0, 1)));
+	CHECK(cells.has(Vector3i(0, 0, 2)));
+	CHECK(cells.size() == 3);
+
+	// three by three by three region starting at origin
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(2, 2, 2));
+	CHECK(cells.size() == 3 * 3 * 3);
+	for (int z = 0; z <= 2; z++) {
+		for (int y = 0; y <= 2; y++) {
+			for (int x = 0; x <= 2; x++) {
+				CHECK_MESSAGE(cells.has(Vector3i(x, y, z)),
+						"cells should contain (", x, ", ", y, ", ", z, ")");
+			}
+		}
+	}
+
+	// two by three by four region starting at (-10, -100, -1000)
+	cells = map.local_region_to_map(Vector3(-10, -100, -1000), Vector3(-11, -102, -1003));
+	CHECK(cells.size() == 2 * 3 * 4);
+	for (int z = -1003; z <= -1000; z++) {
+		for (int y = -102; y <= -100; y++) {
+			for (int x = -11; x <= -10; x++) {
+				CHECK_MESSAGE(cells.has(Vector3i(x, y, z)),
+						"cells should contain (", x, ", ", y, ", ", z, ")");
+			}
+		}
+	}
+
+	// 5x2x1 passing through the origin
+	cells = map.local_region_to_map(Vector3(-2, -1, 0), Vector3(2, 0, 0));
+	CHECK(cells.size() == 5 * 2 * 1);
+	for (int z = 0; z <= 0; z++) {
+		for (int y = -1; y <= 0; y++) {
+			for (int x = -2; x <= -2; x++) {
+				CHECK_MESSAGE(cells.has(Vector3i(x, y, z)),
+						"cells should contain (", x, ", ", y, ", ", z, ")");
+			}
+		}
+	}
+
+	SUBCASE("2x2x2 cube tiles") {
+		GridMap map;
+		map.set_cell_shape(GridMap::CELL_SHAPE_SQUARE);
+		map.set_cell_size(Vector3(2.0, 2.0, 2.0));
+
+		cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(3.9, 0, 3.9));
+		CHECK(cells.has(Vector3i(0, 0, 0)));
+		CHECK(cells.has(Vector3i(0, 0, 1)));
+		CHECK(cells.has(Vector3i(1, 0, 0)));
+		CHECK(cells.has(Vector3i(1, 0, 1)));
+		CHECK(cells.size() == 4);
+	}
+}
+
+TEST_CASE("[SceneTree][GridMap] map_to_local() with hex cells") {
+	GridMap map;
+	map.set_cell_shape(GridMap::CELL_SHAPE_HEXAGON);
+	map.set_cell_size(Vector3(1.0, 1.0, 1.0));
+
+	// even with zero volume, we'll include the single cell we are within.
+	TypedArray<Vector3i> cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(0, 0, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.size() == 1);
+
+	// three cells along the x-axis
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(Math_SQRT3 * 2, 0, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(1, 0, 0)));
+	CHECK(cells.has(Vector3i(2, 0, 0)));
+	CHECK(cells.size() == 3);
+
+	// three cells along the y-axis
+	cells = map.local_region_to_map(Vector3(0, 0, 0), Vector3(0, 2, 0));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 1, 0)));
+	CHECK(cells.has(Vector3i(0, 2, 0)));
+	CHECK(cells.size() == 3);
+
+	// cells along the z-axis, slightly to the left of center to ensure we add
+	// the southwest zigzag cells
+	cells = map.local_region_to_map(Vector3(-0.1, 0, 0), Vector3(-0.1, 0, 3));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(-1, 0, 1)));
+	CHECK(cells.has(Vector3i(-1, 0, 2)));
+	CHECK(cells.size() == 3);
+
+	// Same as above, but go southeast instead
+	cells = map.local_region_to_map(Vector3(0.1, 0, 0), Vector3(0.1, 0, 3));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 0, 1)));
+	CHECK(cells.has(Vector3i(-1, 0, 2)));
+	CHECK(cells.size() == 3);
+
+	// square region around the origin
+	cells = map.local_region_to_map(Vector3(-Math_SQRT3, 0, -1), Vector3(Math_SQRT3, 0, 1));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 0, 1)));
+	CHECK(cells.has(Vector3i(0, 0, -1)));
+	CHECK(cells.has(Vector3i(1, 0, -1)));
+	CHECK(cells.has(Vector3i(1, 0, 0)));
+	CHECK(cells.has(Vector3i(-1, 0, 0)));
+	CHECK(cells.has(Vector3i(-1, 0, 1)));
+	CHECK(cells.size() == 7);
+
+	// similar to above, but bring in the X coordinates to exclude east & west
+	// cells
+	cells = map.local_region_to_map(Vector3(-SQRT3_2 + 0.1, 0, -1), Vector3(SQRT3_2 - 0.1, 0, 1));
+	CHECK(cells.has(Vector3i(0, 0, 0)));
+	CHECK(cells.has(Vector3i(0, 0, 1)));
+	CHECK(cells.has(Vector3i(0, 0, -1)));
+	CHECK(cells.has(Vector3i(1, 0, -1)));
+	CHECK(cells.has(Vector3i(-1, 0, 1)));
+	CHECK(cells.size() == 5);
+}
 } // namespace TestGridMap
 
 #endif // TEST_GRID_MAP_H

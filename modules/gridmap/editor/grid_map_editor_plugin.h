@@ -31,6 +31,7 @@
 #ifndef GRID_MAP_EDITOR_PLUGIN_H
 #define GRID_MAP_EDITOR_PLUGIN_H
 
+#include "core/templates/rid.h"
 #ifdef TOOLS_ENABLED
 
 #include "../grid_map.h"
@@ -103,12 +104,7 @@ class GridMapEditor : public VBoxContainer {
 	RID grid[3];
 	RID grid_instance[3];
 	RID cursor_instance;
-	RID selection_mesh;
-	RID selection_instance;
-	RID selection_level_mesh[3];
-	RID selection_level_instance[3];
-	RID paste_mesh;
-	RID paste_instance;
+	RID tile_mesh;
 
 	struct ClipboardItem {
 		int cell_item = 0;
@@ -122,7 +118,6 @@ class GridMapEditor : public VBoxContainer {
 	Ref<StandardMaterial3D> indicator_mat;
 	Ref<StandardMaterial3D> inner_mat;
 	Ref<StandardMaterial3D> outer_mat;
-	Ref<StandardMaterial3D> selection_floor_mat;
 
 	bool updating = false;
 
@@ -132,14 +127,12 @@ class GridMapEditor : public VBoxContainer {
 		Vector3 begin;
 		Vector3 end;
 		bool active = false;
+		Vector<RID> cells;
 	} selection;
 	Selection last_selection;
 
 	struct PasteIndicator {
-		Vector3 click;
-		Vector3 current;
-		Vector3 begin;
-		Vector3 end;
+		Vector3i current_cell;
 		int orientation = 0;
 	};
 	PasteIndicator paste_indicator;
@@ -147,7 +140,7 @@ class GridMapEditor : public VBoxContainer {
 	bool cursor_visible = false;
 	Transform3D cursor_transform;
 
-	Vector3 cursor_cell;
+	Vector3i cursor_cell;
 
 	int display_mode = DISPLAY_THUMBNAIL;
 	int selected_palette = -1;
@@ -190,6 +183,8 @@ class GridMapEditor : public VBoxContainer {
 	void _draw_floor_grid(RID p_grid);
 	void _draw_plane_grid(RID p_grid, const Vector3 &p_axis_n1, const Vector3 &p_axis_n2);
 	void _draw_grids(const Vector3 &p_cell_size);
+	void _update_cell_shape(const GridMap::CellShape cell_shape);
+	void _build_tile_mesh();
 	void _configure();
 	void _menu_option(int);
 	void update_palette();

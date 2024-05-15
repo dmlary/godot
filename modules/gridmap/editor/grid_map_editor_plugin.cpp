@@ -33,7 +33,6 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/core_string_names.h"
-#include "core/input/input.h"
 #include "core/os/keyboard.h"
 #include "editor/editor_node.h"
 #include "editor/editor_settings.h"
@@ -47,6 +46,7 @@
 #include "scene/gui/menu_button.h"
 #include "scene/gui/separator.h"
 #include "scene/main/window.h"
+#include "scene/resources/primitive_meshes.h"
 
 void GridMapEditor::_configure() {
 	if (!node) {
@@ -223,10 +223,7 @@ void GridMapEditor::_menu_option(int p_option) {
 			}
 
 			input_action = INPUT_PASTE;
-			paste_indicator.click = selection.begin;
-			paste_indicator.current = selection.begin;
-			paste_indicator.begin = selection.begin;
-			paste_indicator.end = selection.end;
+			paste_indicator.current_cell = selection.begin;
 			paste_indicator.orientation = 0;
 			_update_paste_indicator();
 		} break;
@@ -272,41 +269,33 @@ void GridMapEditor::_update_cursor_transform() {
 }
 
 void GridMapEditor::_update_selection_transform() {
-	Transform3D xf_zero;
-	xf_zero.basis.set_zero();
-
+	// to simplify the code, just clear the existing selection cells each time
+	// we're called
+	for (RID rid : selection.cells) {
+		RenderingServer::get_singleton()->free(rid);
+	}
+	selection.cells.clear();
 	if (!selection.active) {
-		RenderingServer::get_singleton()->instance_set_transform(selection_instance, xf_zero);
-		for (int i = 0; i < 3; i++) {
-			RenderingServer::get_singleton()->instance_set_transform(selection_level_instance[i], xf_zero);
-		}
 		return;
 	}
 
-	Transform3D xf;
-	xf.scale((Vector3(1, 1, 1) + (selection.end - selection.begin)) * node->get_cell_size());
-	xf.origin = selection.begin * node->get_cell_size();
+	// general scaling and translation for the cell mesh.  The translation is
+	// necessary because the meshes are centered around the origin, and we
+	// need to shift the cell up.
+	Transform3D xf = Transform3D()
+							 .scaled_local(node->get_cell_size())
+							 .translated(Vector3(0, node->get_center_y() ? 0 : (node->get_cell_size().y / 2.0), 0));
 
-	RenderingServer::get_singleton()->instance_set_transform(selection_instance, node->get_global_transform() * xf);
+	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
+	for (int i = 0; i < cells.size(); i++) {
+		Vector3i cell = cells[i];
 
-	for (int i = 0; i < 3; i++) {
-		if (i != edit_axis || (edit_floor[edit_axis] < selection.begin[edit_axis]) || (edit_floor[edit_axis] > selection.end[edit_axis] + 1)) {
-			RenderingServer::get_singleton()->instance_set_transform(selection_level_instance[i], xf_zero);
-		} else {
-			Vector3 scale = (selection.end - selection.begin + Vector3(1, 1, 1));
-			scale[edit_axis] = 1.0;
-			Vector3 position = selection.begin;
-			position[edit_axis] = edit_floor[edit_axis];
+		RID instance = RenderingServer::get_singleton()->instance_create2(tile_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
+		RenderingServer::get_singleton()->instance_set_layer_mask(instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
 
-			scale *= node->get_cell_size();
-			position *= node->get_cell_size();
-
-			Transform3D xf2;
-			xf2.basis.scale(scale);
-			xf2.origin = position;
-
-			RenderingServer::get_singleton()->instance_set_transform(selection_level_instance[i], xf2);
-		}
+		RenderingServer::get_singleton()->instance_set_transform(
+				instance, xf.translated(node->map_to_local(cell)));
+		selection.cells.push_back(instance);
 	}
 }
 
@@ -380,7 +369,7 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	Plane p;
 	p.normal[edit_axis] = 1.0;
 	p.d = edit_floor[edit_axis] * cell_depth;
-	p.d += cell_depth * 0.5;
+	p.d += cell_depth * 0.2;
 
 	Vector3 inters;
 	if (!p.intersects_segment(from, from + normal * settings_pick_distance->get_value(), &inters)) {
@@ -396,7 +385,12 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 		}
 	}
 
-	Vector3 cell = node->local_to_map(inters);
+	Vector3i cell = node->local_to_map(inters);
+	// fprintf(stderr,
+	// 		"cursor (%.02f, %.02f, %.02f)"
+	// 		" cell (%d, %d, %d)\n",
+	// 		inters.x, inters.y, inters.z,
+	// 		cell.x, cell.y, cell.z);
 
 	RS::get_singleton()->instance_set_transform(grid_instance[edit_axis], node->get_global_transform() * edit_grid_xform);
 
@@ -412,11 +406,11 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	}
 
 	if (input_action == INPUT_PASTE) {
-		paste_indicator.current = Vector3i(cell[0], cell[1], cell[2]);
+		paste_indicator.current_cell = cell;
 		_update_paste_indicator();
 
 	} else if (input_action == INPUT_SELECT) {
-		selection.current = Vector3i(cell[0], cell[1], cell[2]);
+		selection.current = inters;
 		if (p_click) {
 			selection.click = selection.current;
 		}
@@ -425,7 +419,7 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 
 		return true;
 	} else if (input_action == INPUT_PICK) {
-		int item = node->get_cell_item(Vector3i(cell[0], cell[1], cell[2]));
+		int item = node->get_cell_item(cell);
 		if (item >= 0) {
 			selected_palette = item;
 
@@ -445,23 +439,23 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 
 	if (input_action == INPUT_PAINT) {
 		SetItem si;
-		si.position = Vector3i(cell[0], cell[1], cell[2]);
+		si.position = cell;
 		si.new_value = selected_palette;
 		si.new_orientation = cursor_rot;
-		si.old_value = node->get_cell_item(Vector3i(cell[0], cell[1], cell[2]));
-		si.old_orientation = node->get_cell_item_orientation(Vector3i(cell[0], cell[1], cell[2]));
+		si.old_value = node->get_cell_item(cell);
+		si.old_orientation = node->get_cell_item_orientation(cell);
 		set_items.push_back(si);
-		node->set_cell_item(Vector3i(cell[0], cell[1], cell[2]), selected_palette, cursor_rot);
+		node->set_cell_item(cell, selected_palette, cursor_rot);
 		return true;
 	} else if (input_action == INPUT_ERASE) {
 		SetItem si;
 		si.position = Vector3i(cell[0], cell[1], cell[2]);
 		si.new_value = -1;
 		si.new_orientation = 0;
-		si.old_value = node->get_cell_item(Vector3i(cell[0], cell[1], cell[2]));
-		si.old_orientation = node->get_cell_item_orientation(Vector3i(cell[0], cell[1], cell[2]));
+		si.old_value = node->get_cell_item(cell);
+		si.old_orientation = node->get_cell_item_orientation(cell);
 		set_items.push_back(si);
-		node->set_cell_item(Vector3i(cell[0], cell[1], cell[2]), -1);
+		node->set_cell_item(cell, -1);
 		return true;
 	}
 
@@ -475,15 +469,14 @@ void GridMapEditor::_delete_selection() {
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("GridMap Delete Selection"));
-	for (int i = selection.begin.x; i <= selection.end.x; i++) {
-		for (int j = selection.begin.y; j <= selection.end.y; j++) {
-			for (int k = selection.begin.z; k <= selection.end.z; k++) {
-				Vector3i selected = Vector3i(i, j, k);
-				undo_redo->add_do_method(node, "set_cell_item", selected, GridMap::INVALID_CELL_ITEM);
-				undo_redo->add_undo_method(node, "set_cell_item", selected, node->get_cell_item(selected), node->get_cell_item_orientation(selected));
-			}
-		}
+
+	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
+	for (int i = 0; i < cells.size(); i++) {
+		Vector3i cell = cells[i];
+		undo_redo->add_do_method(node, "set_cell_item", cell, GridMap::INVALID_CELL_ITEM);
+		undo_redo->add_undo_method(node, "set_cell_item", cell, node->get_cell_item(cell), node->get_cell_item_orientation(cell));
 	}
+
 	undo_redo->add_do_method(this, "_set_selection", !selection.active, selection.begin, selection.end);
 	undo_redo->add_undo_method(this, "_set_selection", selection.active, selection.begin, selection.end);
 	undo_redo->commit_action();
@@ -496,15 +489,14 @@ void GridMapEditor::_fill_selection() {
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("GridMap Fill Selection"));
-	for (int i = selection.begin.x; i <= selection.end.x; i++) {
-		for (int j = selection.begin.y; j <= selection.end.y; j++) {
-			for (int k = selection.begin.z; k <= selection.end.z; k++) {
-				Vector3i selected = Vector3i(i, j, k);
-				undo_redo->add_do_method(node, "set_cell_item", selected, selected_palette, cursor_rot);
-				undo_redo->add_undo_method(node, "set_cell_item", selected, node->get_cell_item(selected), node->get_cell_item_orientation(selected));
-			}
-		}
+
+	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
+	for (int i = 0; i < cells.size(); i++) {
+		Vector3i cell = cells[i];
+		undo_redo->add_do_method(node, "set_cell_item", cell, selected_palette, cursor_rot);
+		undo_redo->add_undo_method(node, "set_cell_item", cell, node->get_cell_item(cell), node->get_cell_item_orientation(cell));
 	}
+
 	undo_redo->add_do_method(this, "_set_selection", !selection.active, selection.begin, selection.end);
 	undo_redo->add_undo_method(this, "_set_selection", selection.active, selection.begin, selection.end);
 	undo_redo->commit_action();
@@ -523,90 +515,95 @@ void GridMapEditor::_set_clipboard_data() {
 
 	Ref<MeshLibrary> meshLibrary = node->get_mesh_library();
 
-	for (int i = selection.begin.x; i <= selection.end.x; i++) {
-		for (int j = selection.begin.y; j <= selection.end.y; j++) {
-			for (int k = selection.begin.z; k <= selection.end.z; k++) {
-				Vector3i selected = Vector3i(i, j, k);
-				int itm = node->get_cell_item(selected);
-				if (itm == GridMap::INVALID_CELL_ITEM) {
-					continue;
-				}
+	RID root = get_tree()->get_root()->get_world_3d()->get_scenario();
 
-				Ref<Mesh> mesh = meshLibrary->get_item_mesh(itm);
+	Vector3 begin = node->map_to_local(node->local_to_map(selection.begin));
+	Vector3 end = node->map_to_local(node->local_to_map(selection.end));
+	Vector3 selection_center = (end + begin) / 2.0;
+	// fprintf(stderr, "selection_center (%.02f, %.02f, %.02f)\n",
+	// 		selection_center.x, selection_center.y, selection_center.z);
+	Vector3 offset = node->map_to_local(node->local_to_map(selection_center));
+	// fprintf(stderr, "offset (%.02f, %.02f, %.02f)\n",
+	// 		offset.x, offset.y, offset.z);
 
-				ClipboardItem item;
-				item.cell_item = itm;
-				item.grid_offset = Vector3(selected) - selection.begin;
-				item.orientation = node->get_cell_item_orientation(selected);
-				item.instance = RenderingServer::get_singleton()->instance_create2(mesh->get_rid(), get_tree()->get_root()->get_world_3d()->get_scenario());
-
-				clipboard_items.push_back(item);
-			}
+	TypedArray<Vector3i>
+			cells = node->local_region_to_map(selection.begin, selection.end);
+	for (int i = 0; i < cells.size(); i++) {
+		Vector3i cell = cells[i];
+		int id = node->get_cell_item(cell);
+		if (id == GridMap::INVALID_CELL_ITEM) {
+			continue;
 		}
+
+		RID mesh = meshLibrary->get_item_mesh(id)->get_rid();
+		RID instance = RS::get_singleton()->instance_create2(mesh, root);
+
+		ClipboardItem item;
+		item.cell_item = id;
+		item.grid_offset = node->map_to_local(cell) - offset;
+		item.orientation = node->get_cell_item_orientation(cell);
+		item.instance = instance;
+		clipboard_items.push_back(item);
 	}
 }
 
 void GridMapEditor::_update_paste_indicator() {
 	if (input_action != INPUT_PASTE) {
-		Transform3D xf;
-		xf.basis.set_zero();
-		RenderingServer::get_singleton()->instance_set_transform(paste_instance, xf);
+		_clear_clipboard_data();
 		return;
 	}
 
-	Vector3 center = 0.5 * Vector3(real_t(node->get_center_x()), real_t(node->get_center_y()), real_t(node->get_center_z()));
-	Vector3 scale = (Vector3(1, 1, 1) + (paste_indicator.end - paste_indicator.begin)) * node->get_cell_size();
-	Transform3D xf;
-	xf.scale(scale);
-	xf.origin = (paste_indicator.begin + (paste_indicator.current - paste_indicator.click) + center) * node->get_cell_size();
-	Basis rot;
-	rot = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-	xf.basis = rot * xf.basis;
-	xf.translate_local((-center * node->get_cell_size()) / scale);
-
-	RenderingServer::get_singleton()->instance_set_transform(paste_instance, node->get_global_transform() * xf);
+	Vector3 cursor = node->map_to_local(paste_indicator.current_cell);
+	Basis paste_rotation = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
 
 	for (const ClipboardItem &item : clipboard_items) {
-		xf = Transform3D();
-		xf.origin = (paste_indicator.begin + (paste_indicator.current - paste_indicator.click) + center) * node->get_cell_size();
-		xf.basis = rot * xf.basis;
-		xf.translate_local(item.grid_offset * node->get_cell_size());
+		// move the item to the cursor, then apply paste rotation, then
+		// translate by the item's cell offset.
+		Transform3D xf;
+		xf.origin = cursor;
+		xf.basis = paste_rotation * xf.basis;
+		xf.translate_local(item.grid_offset);
 
-		Basis item_rot;
-		item_rot = node->get_basis_with_orthogonal_index(item.orientation);
-		xf.basis = item_rot * xf.basis * node->get_cell_scale();
+		xf.basis = node->get_basis_with_orthogonal_index(item.orientation) * xf.basis;
 
-		RenderingServer::get_singleton()->instance_set_transform(item.instance, node->get_global_transform() * xf);
+		RS::get_singleton()->instance_set_transform(item.instance, xf);
 	}
 }
 
 void GridMapEditor::_do_paste() {
-	int idx = options->get_popup()->get_item_index(MENU_OPTION_PASTE_SELECTS);
-	bool reselect = options->get_popup()->is_item_checked(idx);
+	Vector3 cursor = node->map_to_local(paste_indicator.current_cell);
+	Basis paste_rotation = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
 
-	Basis rot;
-	rot = node->get_basis_with_orthogonal_index(paste_indicator.orientation);
-
-	Vector3 ofs = paste_indicator.current - paste_indicator.click;
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("GridMap Paste Selection"));
 
+	// track the bounds of the paste region in case we need to select it below
+	AABB bounds;
+	bounds.set_position(cursor);
+
 	for (const ClipboardItem &item : clipboard_items) {
-		Vector3 position = rot.xform(item.grid_offset) + paste_indicator.begin + ofs;
+		// apply paste rotation & convert it to a cell index
+		Vector3 position = paste_rotation.xform(item.grid_offset) + cursor;
+		Vector3i cell = node->local_to_map(position);
+		bounds.expand_to(position);
 
-		Basis orm;
-		orm = node->get_basis_with_orthogonal_index(item.orientation);
-		orm = rot * orm;
+		// apply paste rotation to existing cell rotation to get cell orientation
+		Basis cell_rotation = paste_rotation *
+				node->get_basis_with_orthogonal_index(item.orientation);
+		int cell_orientation = node->get_orthogonal_index_from_basis(cell_rotation);
 
-		undo_redo->add_do_method(node, "set_cell_item", position, item.cell_item, node->get_orthogonal_index_from_basis(orm));
-		undo_redo->add_undo_method(node, "set_cell_item", position, node->get_cell_item(position), node->get_cell_item_orientation(position));
+		undo_redo->add_do_method(node, "set_cell_item", cell, item.cell_item, cell_orientation);
+		undo_redo->add_undo_method(node, "set_cell_item", cell, node->get_cell_item(cell), node->get_cell_item_orientation(cell));
 	}
 
-	if (reselect) {
-		undo_redo->add_do_method(this, "_set_selection", true, paste_indicator.begin + ofs, paste_indicator.end + ofs);
+	// if "Paste Selects" option is checked, update the selection to reflect
+	// the pasted region.
+	int option_index = options->get_popup()->get_item_index(MENU_OPTION_PASTE_SELECTS);
+	if (options->get_popup()->is_item_checked(option_index)) {
+		Vector3 begin = bounds.position, end = bounds.get_end();
+		undo_redo->add_do_method(this, "_set_selection", true, begin, end);
 		undo_redo->add_undo_method(this, "_set_selection", selection.active, selection.begin, selection.end);
 	}
-
 	undo_redo->commit_action();
 
 	_clear_clipboard_data();
@@ -643,6 +640,7 @@ EditorPlugin::AfterGUIInput GridMapEditor::forward_spatial_input_event(Camera3D 
 					_do_paste();
 					input_action = INPUT_NONE;
 					_update_paste_indicator();
+					return EditorPlugin::AFTER_GUI_INPUT_STOP;
 				} else if (mb->is_shift_pressed() && can_edit) {
 					input_action = INPUT_SELECT;
 					last_selection = selection;
@@ -956,6 +954,7 @@ void GridMapEditor::_update_mesh_library() {
 void GridMapEditor::edit(GridMap *p_gridmap) {
 	if (node) {
 		node->disconnect(SNAME("cell_size_changed"), callable_mp(this, &GridMapEditor::_draw_grids));
+		node->disconnect(SNAME("cell_shape_changed"), callable_mp(this, &GridMapEditor::_update_cell_shape));
 		node->disconnect(CoreStringNames::get_singleton()->changed, callable_mp(this, &GridMapEditor::_update_mesh_library));
 		if (mesh_library.is_valid()) {
 			mesh_library->disconnect_changed(callable_mp(this, &GridMapEditor::update_palette));
@@ -967,6 +966,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 
 	input_action = INPUT_NONE;
 	selection.active = false;
+	_build_tile_mesh();
 	_update_selection_transform();
 	_update_paste_indicator();
 
@@ -994,6 +994,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 	update_grid();
 
 	node->connect(SNAME("cell_size_changed"), callable_mp(this, &GridMapEditor::_draw_grids));
+	node->connect(SNAME("cell_shape_changed"), callable_mp(this, &GridMapEditor::_update_cell_shape));
 	node->connect(CoreStringNames::get_singleton()->changed, callable_mp(this, &GridMapEditor::_update_mesh_library));
 	_update_mesh_library();
 }
@@ -1040,6 +1041,10 @@ void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
 	for (int x = -GRID_CURSOR_SIZE; x <= GRID_CURSOR_SIZE; x++) {
 		for (int z = -GRID_CURSOR_SIZE; z <= GRID_CURSOR_SIZE; z++) {
 			Vector3 center = node->map_to_local(Vector3(x, 0, z));
+			if (x == 0 && z == 0) {
+				fprintf(stderr, "center of (0, 0) @ (%.02f, %.02f, %.02f)\n",
+						center.x, center.y, center.z);
+			}
 
 			for (int i = 1; i < shape_points.size(); i++) {
 				grid_points.append(center + Vector3(shape_points[i - 1].x * cell_size.x, 0, shape_points[i - 1].y * cell_size.z));
@@ -1113,6 +1118,47 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 	_draw_plane_grid(grid[2], Vector3(1, 0, 0), Vector3(0, 1, 0));
 }
 
+void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
+	_draw_grids(node->get_cell_size());
+	_build_tile_mesh();
+}
+
+void GridMapEditor::_build_tile_mesh() {
+	if (tile_mesh.is_valid()) {
+		RS::get_singleton()->free(tile_mesh);
+		tile_mesh = RID();
+	}
+
+	// we can get called when node is null
+	if (node == NULL) {
+		return;
+	}
+
+	Array arr;
+	arr.resize(RS::ARRAY_MAX);
+
+	switch (node->get_cell_shape()) {
+		case GridMap::CELL_SHAPE_SQUARE: {
+			BoxMesh::create_mesh_array(arr, Vector3(1, 1, 1));
+			break;
+		}
+		case GridMap::CELL_SHAPE_HEXAGON:
+			CylinderMesh::create_mesh_array(arr, 1.0, 1.0, 1, 6, 1);
+			break;
+		default:
+			ERR_PRINT_ED("unsupported cell shape");
+	}
+
+	RenderingServer *rs = RS::get_singleton();
+	tile_mesh = rs->mesh_create();
+	rs->mesh_add_surface_from_arrays(tile_mesh, RS::PRIMITIVE_TRIANGLES, arr);
+	rs->mesh_surface_set_material(tile_mesh, 0, inner_mat->get_rid());
+	rs->instance_set_layer_mask(tile_mesh, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
+
+	// TODO: want to add an outline to the tile, but it could significantly
+	// complicate this code.
+}
+
 void GridMapEditor::_update_theme() {
 	options->set_icon(get_theme_icon(SNAME("GridMap"), EditorStringName(EditorIcons)));
 	search_box->set_right_icon(get_theme_icon(SNAME("Search"), EditorStringName(EditorIcons)));
@@ -1128,15 +1174,7 @@ void GridMapEditor::_notification(int p_what) {
 				grid[i] = RS::get_singleton()->mesh_create();
 				grid_instance[i] = RS::get_singleton()->instance_create2(grid[i], get_tree()->get_root()->get_world_3d()->get_scenario());
 				RenderingServer::get_singleton()->instance_set_layer_mask(grid_instance[i], 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
-				selection_level_instance[i] = RenderingServer::get_singleton()->instance_create2(selection_level_mesh[i], get_tree()->get_root()->get_world_3d()->get_scenario());
-				RenderingServer::get_singleton()->instance_set_layer_mask(selection_level_instance[i], 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
 			}
-
-			selection_instance = RenderingServer::get_singleton()->instance_create2(selection_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
-			RenderingServer::get_singleton()->instance_set_layer_mask(selection_instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
-			paste_instance = RenderingServer::get_singleton()->instance_create2(paste_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
-			RenderingServer::get_singleton()->instance_set_layer_mask(paste_instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
-
 			_update_selection_transform();
 			_update_paste_indicator();
 			_update_theme();
@@ -1150,13 +1188,10 @@ void GridMapEditor::_notification(int p_what) {
 				RS::get_singleton()->free(grid[i]);
 				grid_instance[i] = RID();
 				grid[i] = RID();
-				RenderingServer::get_singleton()->free(selection_level_instance[i]);
 			}
 
-			RenderingServer::get_singleton()->free(selection_instance);
-			RenderingServer::get_singleton()->free(paste_instance);
-			selection_instance = RID();
-			paste_instance = RID();
+			selection.active = false;
+			_update_selection_transform();
 		} break;
 
 		case NOTIFICATION_PROCESS: {
@@ -1388,124 +1423,19 @@ GridMapEditor::GridMapEditor() {
 	edit_floor[1] = -1;
 	edit_floor[2] = -1;
 
-	selection_mesh = RenderingServer::get_singleton()->mesh_create();
-	paste_mesh = RenderingServer::get_singleton()->mesh_create();
+	inner_mat.instantiate();
+	inner_mat->set_albedo(Color(0.7, 0.7, 1.0, 0.2));
+	inner_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	inner_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
+	inner_mat->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
 
-	{
-		// Selection mesh create.
+	outer_mat.instantiate();
+	outer_mat->set_albedo(Color(0.7, 0.7, 1.0, 0.8));
+	outer_mat->set_on_top_of_alpha();
 
-		Vector<Vector3> lines;
-		Vector<Vector3> triangles;
-		Vector<Vector3> square[3];
-
-		for (int i = 0; i < 6; i++) {
-			Vector3 face_points[4];
-
-			for (int j = 0; j < 4; j++) {
-				float v[3];
-				v[0] = 1.0;
-				v[1] = 1 - 2 * ((j >> 1) & 1);
-				v[2] = v[1] * (1 - 2 * (j & 1));
-
-				for (int k = 0; k < 3; k++) {
-					if (i < 3) {
-						face_points[j][(i + k) % 3] = v[k];
-					} else {
-						face_points[3 - j][(i + k) % 3] = -v[k];
-					}
-				}
-			}
-
-			triangles.push_back(face_points[0] * 0.5 + Vector3(0.5, 0.5, 0.5));
-			triangles.push_back(face_points[1] * 0.5 + Vector3(0.5, 0.5, 0.5));
-			triangles.push_back(face_points[2] * 0.5 + Vector3(0.5, 0.5, 0.5));
-
-			triangles.push_back(face_points[2] * 0.5 + Vector3(0.5, 0.5, 0.5));
-			triangles.push_back(face_points[3] * 0.5 + Vector3(0.5, 0.5, 0.5));
-			triangles.push_back(face_points[0] * 0.5 + Vector3(0.5, 0.5, 0.5));
-		}
-
-		for (int i = 0; i < 12; i++) {
-			AABB base(Vector3(0, 0, 0), Vector3(1, 1, 1));
-			Vector3 a, b;
-			base.get_edge(i, a, b);
-			lines.push_back(a);
-			lines.push_back(b);
-		}
-
-		for (int i = 0; i < 3; i++) {
-			Vector3 points[4];
-			for (int j = 0; j < 4; j++) {
-				static const bool orderx[4] = { false, true, true, false };
-				static const bool ordery[4] = { false, false, true, true };
-
-				Vector3 sp;
-				if (orderx[j]) {
-					sp[(i + 1) % 3] = 1.0;
-				}
-				if (ordery[j]) {
-					sp[(i + 2) % 3] = 1.0;
-				}
-
-				points[j] = sp;
-			}
-
-			for (int j = 0; j < 4; j++) {
-				Vector3 ofs;
-				ofs[i] += 0.01;
-				square[i].push_back(points[j] - ofs);
-				square[i].push_back(points[(j + 1) % 4] - ofs);
-				square[i].push_back(points[j] + ofs);
-				square[i].push_back(points[(j + 1) % 4] + ofs);
-			}
-		}
-
-		Array d;
-		d.resize(RS::ARRAY_MAX);
-
-		inner_mat.instantiate();
-		inner_mat->set_albedo(Color(0.7, 0.7, 1.0, 0.2));
-		inner_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
-		inner_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
-		inner_mat->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
-
-		d[RS::ARRAY_VERTEX] = triangles;
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(selection_mesh, RS::PRIMITIVE_TRIANGLES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(selection_mesh, 0, inner_mat->get_rid());
-
-		outer_mat.instantiate();
-		outer_mat->set_albedo(Color(0.7, 0.7, 1.0, 0.8));
-		outer_mat->set_on_top_of_alpha();
-
-		outer_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
-		outer_mat->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
-		outer_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
-
-		selection_floor_mat.instantiate();
-		selection_floor_mat->set_albedo(Color(0.80, 0.80, 1.0, 1));
-		selection_floor_mat->set_on_top_of_alpha();
-		selection_floor_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
-		selection_floor_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
-
-		d[RS::ARRAY_VERTEX] = lines;
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(selection_mesh, RS::PRIMITIVE_LINES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(selection_mesh, 1, outer_mat->get_rid());
-
-		d[RS::ARRAY_VERTEX] = triangles;
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(paste_mesh, RS::PRIMITIVE_TRIANGLES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(paste_mesh, 0, inner_mat->get_rid());
-
-		d[RS::ARRAY_VERTEX] = lines;
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(paste_mesh, RS::PRIMITIVE_LINES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(paste_mesh, 1, outer_mat->get_rid());
-
-		for (int i = 0; i < 3; i++) {
-			d[RS::ARRAY_VERTEX] = square[i];
-			selection_level_mesh[i] = RS::get_singleton()->mesh_create();
-			RenderingServer::get_singleton()->mesh_add_surface_from_arrays(selection_level_mesh[i], RS::PRIMITIVE_LINES, d);
-			RenderingServer::get_singleton()->mesh_surface_set_material(selection_level_mesh[i], 0, selection_floor_mat->get_rid());
-		}
-	}
+	outer_mat->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	outer_mat->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+	outer_mat->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
 
 	_set_selection(false);
 
@@ -1532,23 +1462,8 @@ GridMapEditor::~GridMapEditor() {
 		if (cursor_instance.is_valid()) {
 			RenderingServer::get_singleton()->free(cursor_instance);
 		}
-		if (selection_level_instance[i].is_valid()) {
-			RenderingServer::get_singleton()->free(selection_level_instance[i]);
-		}
-		if (selection_level_mesh[i].is_valid()) {
-			RenderingServer::get_singleton()->free(selection_level_mesh[i]);
-		}
 	}
-
-	RenderingServer::get_singleton()->free(selection_mesh);
-	if (selection_instance.is_valid()) {
-		RenderingServer::get_singleton()->free(selection_instance);
-	}
-
-	RenderingServer::get_singleton()->free(paste_mesh);
-	if (paste_instance.is_valid()) {
-		RenderingServer::get_singleton()->free(paste_instance);
-	}
+	RenderingServer::get_singleton()->free(tile_mesh);
 }
 
 void GridMapEditorPlugin::_notification(int p_what) {
