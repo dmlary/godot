@@ -93,15 +93,28 @@ class GridMapEditor : public VBoxContainer {
 	List<SetItem> set_items;
 
 	GridMap *node = nullptr;
+	// caching the node global transform to detect when the node has been
+	// moved/scaled/rotated.
+	Transform3D node_global_transform;
 	Ref<MeshLibrary> mesh_library = nullptr;
 
-	Transform3D grid_xform;
-	Transform3D edit_grid_xform;
-	Vector3::Axis edit_axis;
-	int edit_floor[3];
-	Vector3 grid_ofs;
+	// plane we're editing cells on; depth comes from edit_floor
+	Plane edit_plane;
 
-	RID grid[3];
+	enum EditAxis {
+		AXIS_X = 0,
+		AXIS_R = AXIS_X, // axial hex coordinates east/west
+		AXIS_Y,
+		AXIS_Z,
+		AXIS_Q, // axial hex coordinates northwest/southeast
+		AXIS_S, // axial hex coordinates northeast/southwest
+		AXIS_MAX,
+	};
+	EditAxis edit_axis;
+	int edit_floor[AXIS_MAX];
+
+	RID active_grid_instance;
+	RID grid_mesh[3];
 	RID grid_instance[3];
 	RID cursor_instance;
 	RID tile_mesh;
@@ -118,8 +131,6 @@ class GridMapEditor : public VBoxContainer {
 	Ref<StandardMaterial3D> indicator_mat;
 	Ref<StandardMaterial3D> inner_mat;
 	Ref<StandardMaterial3D> outer_mat;
-
-	bool updating = false;
 
 	struct Selection {
 		Vector3 click;

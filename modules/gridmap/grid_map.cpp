@@ -498,7 +498,7 @@ static const Basis _ortho_bases_hex[ORTHO_BASES_HEX_LEN] = {
 	Basis(0.5, 0, -SQRT3_2, 0, 1, 0, SQRT3_2, 0, 0.5),
 	Basis(-0.5, 0, -SQRT3_2, 0, 1, 0, SQRT3_2, 0, -0.5),
 
-	// flip across x to make y down, and rotate
+	// rotate 180 degrees about the x-axis to make y down, and rotate about y
 	Basis(1, 0, 0, 0, -1, 0, 0, 0, -1),
 	Basis(0.5, 0, -SQRT3_2, 0, -1, 0, -SQRT3_2, 0, -0.5),
 	Basis(-0.5, 0, -SQRT3_2, 0, -1, 0, -SQRT3_2, 0, 0.5),

@@ -67,29 +67,66 @@ void GridMapEditor::_menu_option(int p_option) {
 		} break;
 
 		case MENU_OPTION_X_AXIS:
-		case MENU_OPTION_Y_AXIS:
-		case MENU_OPTION_Z_AXIS: {
-			int new_axis = p_option - MENU_OPTION_X_AXIS;
-			for (int i = 0; i < 3; i++) {
-				int idx = options->get_popup()->get_item_index(MENU_OPTION_X_AXIS + i);
-				options->get_popup()->set_item_checked(idx, i == new_axis);
+			switch (node->get_cell_shape()) {
+				case GridMap::CELL_SHAPE_SQUARE:
+					edit_axis = AXIS_Z;
+					break;
+				case GridMap::CELL_SHAPE_HEXAGON:
+					// counter clockwise rotation
+					switch (edit_axis) {
+						case AXIS_S:
+							edit_axis = AXIS_Z;
+							break;
+						case AXIS_Z:
+							edit_axis = AXIS_Q;
+							break;
+						case AXIS_Q:
+							edit_axis = AXIS_X;
+							break;
+						default:
+							edit_axis = AXIS_S;
+							break;
+					}
+					break;
+				default:
+					ERR_PRINT_ED("unsupported cell shape");
+					break;
 			}
-
-			if (edit_axis != new_axis) {
-				int item1 = options->get_popup()->get_item_index(MENU_OPTION_NEXT_LEVEL);
-				int item2 = options->get_popup()->get_item_index(MENU_OPTION_PREV_LEVEL);
-				if (edit_axis == Vector3::AXIS_Y) {
-					options->get_popup()->set_item_text(item1, TTR("Next Plane"));
-					options->get_popup()->set_item_text(item2, TTR("Previous Plane"));
-					spin_box_label->set_text(TTR("Plane:"));
-				} else if (new_axis == Vector3::AXIS_Y) {
-					options->get_popup()->set_item_text(item1, TTR("Next Floor"));
-					options->get_popup()->set_item_text(item2, TTR("Previous Floor"));
-					spin_box_label->set_text(TTR("Floor:"));
-				}
-			}
-			edit_axis = Vector3::Axis(new_axis);
 			update_grid();
+			break;
+		case MENU_OPTION_Y_AXIS:
+			edit_axis = AXIS_Y;
+			update_grid();
+			break;
+
+		case MENU_OPTION_Z_AXIS: {
+			switch (node->get_cell_shape()) {
+				case GridMap::CELL_SHAPE_SQUARE:
+					edit_axis = AXIS_X;
+					break;
+				case GridMap::CELL_SHAPE_HEXAGON:
+					// clockwise rotation
+					switch (edit_axis) {
+						case AXIS_X:
+							edit_axis = AXIS_Q;
+							break;
+						case AXIS_Q:
+							edit_axis = AXIS_Z;
+							break;
+						case AXIS_Z:
+							edit_axis = AXIS_S;
+							break;
+						default:
+							edit_axis = AXIS_X;
+							break;
+					}
+					break;
+				default:
+					ERR_PRINT_ED("unsupported cell shape");
+					break;
+			}
+			update_grid();
+			break;
 
 		} break;
 		case MENU_OPTION_CURSOR_ROTATE_Y: {
@@ -269,32 +306,38 @@ void GridMapEditor::_update_cursor_transform() {
 }
 
 void GridMapEditor::_update_selection_transform() {
+	RenderingServer *rs = RS::get_singleton();
+
 	// to simplify the code, just clear the existing selection cells each time
 	// we're called
 	for (RID rid : selection.cells) {
-		RenderingServer::get_singleton()->free(rid);
+		rs->free(rid);
 	}
 	selection.cells.clear();
 	if (!selection.active) {
 		return;
 	}
 
+	// grab the node transform so we can apply it to the cell instances
+	Transform3D node_transform = node->get_global_transform();
+
 	// general scaling and translation for the cell mesh.  The translation is
 	// necessary because the meshes are centered around the origin, and we
 	// need to shift the cell up.
-	Transform3D xf = Transform3D()
-							 .scaled_local(node->get_cell_size())
-							 .translated(Vector3(0, node->get_center_y() ? 0 : (node->get_cell_size().y / 2.0), 0));
+	//
+	// XXX need to accomidate center_x/center_z also?
+	Transform3D cell_transform = Transform3D()
+										 .scaled_local(node->get_cell_size())
+										 .translated(Vector3(0, node->get_center_y() ? 0 : (node->get_cell_size().y / 2.0), 0));
 
 	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
 	for (int i = 0; i < cells.size(); i++) {
 		Vector3i cell = cells[i];
 
-		RID instance = RenderingServer::get_singleton()->instance_create2(tile_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
-		RenderingServer::get_singleton()->instance_set_layer_mask(instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
-
-		RenderingServer::get_singleton()->instance_set_transform(
-				instance, xf.translated(node->map_to_local(cell)));
+		RID instance = rs->instance_create2(tile_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
+		rs->instance_set_layer_mask(instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
+		rs->instance_set_transform(instance,
+				node_transform * cell_transform.translated(node->map_to_local(cell)));
 		selection.cells.push_back(instance);
 	}
 }
@@ -359,20 +402,8 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	from = local_xform.xform(from);
 	normal = local_xform.basis.xform(normal).normalized();
 
-	// create a plane at the bottom of the floor to raycast against.  Note we
-	// move the plane up a small amount to limit floating point errors causing
-	// the raycast from falling into the next lower floor.  This adjustment was
-	// necessary as it's not possible to just override the floor level from
-	// GridMap::local_to_map() for hex shaped cells.  They use an axial
-	// coordinate scheme that requires more work when setting x/z plane values.
-	real_t cell_depth = node->get_cell_size()[edit_axis];
-	Plane p;
-	p.normal[edit_axis] = 1.0;
-	p.d = edit_floor[edit_axis] * cell_depth;
-	p.d += cell_depth * 0.2;
-
 	Vector3 inters;
-	if (!p.intersects_segment(from, from + normal * settings_pick_distance->get_value(), &inters)) {
+	if (!edit_plane.intersects_segment(from, from + normal * settings_pick_distance->get_value(), &inters)) {
 		return false;
 	}
 
@@ -386,13 +417,6 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 	}
 
 	Vector3i cell = node->local_to_map(inters);
-	// fprintf(stderr,
-	// 		"cursor (%.02f, %.02f, %.02f)"
-	// 		" cell (%d, %d, %d)\n",
-	// 		inters.x, inters.y, inters.z,
-	// 		cell.x, cell.y, cell.z);
-
-	RS::get_singleton()->instance_set_transform(grid_instance[edit_axis], node->get_global_transform() * edit_grid_xform);
 
 	if (cursor_instance.is_valid()) {
 		cursor_cell = cell;
@@ -718,9 +742,6 @@ EditorPlugin::AfterGUIInput GridMapEditor::forward_spatial_input_event(Camera3D 
 	Ref<InputEventMouseMotion> mm = p_event;
 
 	if (mm.is_valid()) {
-		// Update the grid, to check if the grid needs to be moved to a tile cursor.
-		update_grid();
-
 		if (do_input_action(p_camera, mm->get_position(), false)) {
 			return EditorPlugin::AFTER_GUI_INPUT_STOP;
 		}
@@ -758,19 +779,6 @@ EditorPlugin::AfterGUIInput GridMapEditor::forward_spatial_input_event(Camera3D 
 						_menu_option(options->get_popup()->get_item_id(i));
 						return EditorPlugin::AFTER_GUI_INPUT_STOP;
 					}
-				}
-			}
-
-			if (k->is_shift_pressed() && selection.active && input_action != INPUT_PASTE) {
-				if (k->get_keycode() == (Key)options->get_popup()->get_item_accelerator(options->get_popup()->get_item_index(MENU_OPTION_PREV_LEVEL))) {
-					selection.click[edit_axis]--;
-					_validate_selection();
-					return EditorPlugin::AFTER_GUI_INPUT_STOP;
-				}
-				if (k->get_keycode() == (Key)options->get_popup()->get_item_accelerator(options->get_popup()->get_item_index(MENU_OPTION_NEXT_LEVEL))) {
-					selection.click[edit_axis]++;
-					_validate_selection();
-					return EditorPlugin::AFTER_GUI_INPUT_STOP;
 				}
 			}
 		}
@@ -990,6 +998,11 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 
 	set_process(true);
 
+	// load any previous floor values
+	TypedArray<int> floors = node->get_meta("_editor_floor_", TypedArray<int>());
+	for (int i = 0; i < MIN(floors.size(), AXIS_MAX); i++) {
+		edit_floor[i] = floors[i];
+	}
 	_draw_grids(node->get_cell_size());
 	update_grid();
 
@@ -1000,21 +1013,93 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 }
 
 void GridMapEditor::update_grid() {
-	grid_xform.origin.x -= 1; // Force update in hackish way.
+	RenderingServer *rs = RS::get_singleton();
+	Vector3 cell_size = node->get_cell_size();
+	bool is_hex = node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON;
 
-	grid_ofs[edit_axis] = edit_floor[edit_axis] * node->get_cell_size()[edit_axis];
+	// hide the active grid
+	rs->instance_set_visible(active_grid_instance, false);
 
-	// If there's a valid tile cursor, offset the grid, otherwise move it back to the node.
-	edit_grid_xform.origin = cursor_instance.is_valid() ? grid_ofs : Vector3();
-	edit_grid_xform.basis = Basis();
+	real_t cell_depth;
+	Transform3D grid_transform;
 
-	for (int i = 0; i < 3; i++) {
-		RenderingServer::get_singleton()->instance_set_visible(grid_instance[i], i == edit_axis);
+	// switch the edit plane and pick the new active grid and rotate if necessary
+	switch (edit_axis) {
+		case AXIS_X: // also hex AXIS_R
+			edit_plane.normal = Vector3(0, 0, 1);
+			active_grid_instance = grid_instance[2];
+			cell_depth = is_hex ? (1.5 * cell_size.x) : cell_size.x;
+			break;
+		case AXIS_Y:
+			edit_plane.normal = Vector3(0, 1, 0);
+			active_grid_instance = grid_instance[1];
+			cell_depth = node->get_cell_size().y;
+			break;
+		case AXIS_Z:
+			edit_plane.normal = Vector3(1, 0, 0);
+			active_grid_instance = grid_instance[0];
+			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.z;
+			break;
+		case AXIS_Q:
+			edit_plane.normal = Vector3(SQRT3_2, 0, -0.5).normalized();
+			active_grid_instance = grid_instance[2];
+			cell_depth = 1.5 * cell_size.x;
+			grid_transform.rotate(Vector3(0, 1, 0), -Math_PI / 3.0);
+			break;
+		case AXIS_S:
+			edit_plane.normal = Vector3(SQRT3_2, 0, 0.5).normalized();
+			active_grid_instance = grid_instance[2];
+			cell_depth = 1.5 * cell_size.x;
+			grid_transform.rotate(Vector3(0, 1, 0), Math_PI / 3.0);
+			break;
+		default:
+			ERR_PRINT_ED("unsupported edit plane axis");
+			return;
 	}
 
-	updating = true;
+	// update the depth of the edit plane so it matches the floor, and update
+	// the grid transform for the depth.
+	edit_plane.d = edit_floor[edit_axis] * cell_depth;
+	grid_transform.origin = edit_plane.normal * edit_plane.d;
+
+	// shift the edit plane a little into the cell to prevent floating point
+	// errors from causing the raycast to fall into the lower cell.  Note we
+	// only need to do this when the grid is drawn along the edge of a cell,
+	// so the Y axis, or any square shape cell.  Hex cells draw the grid through
+	// the middle of the cells for non-Y,
+	if (edit_axis == AXIS_Y || !is_hex) {
+		edit_plane.d += cell_depth * 0.1;
+	}
+
+	RenderingServer::get_singleton()
+			->instance_set_visible(active_grid_instance, true);
+	RenderingServer::get_singleton()->instance_set_transform(active_grid_instance,
+			node->get_global_transform() * grid_transform);
+
 	floor->set_value(edit_floor[edit_axis]);
-	updating = false;
+	// XXX Figure out menu updates for new axis
+	//
+	// int new_axis = p_option - MENU_OPTION_X_AXIS;
+	// for (int i = 0; i < 3; i++) {
+	// 	int idx = options->get_popup()->get_item_index(MENU_OPTION_X_AXIS + i);
+	// 	options->get_popup()->set_item_checked(idx, i == new_axis);
+	// }
+	//
+	// if (edit_axis != new_axis) {
+	// 	int item1 = options->get_popup()->get_item_index(MENU_OPTION_NEXT_LEVEL);
+	// 	int item2 = options->get_popup()->get_item_index(MENU_OPTION_PREV_LEVEL);
+	// 	if (edit_axis == Vector3::AXIS_Y) {
+	// 		options->get_popup()->set_item_text(item1, TTR("Next Plane"));
+	// 		options->get_popup()->set_item_text(item2, TTR("Previous Plane"));
+	// 		spin_box_label->set_text(TTR("Plane:"));
+	// 	} else if (new_axis == Vector3::AXIS_Y) {
+	// 		options->get_popup()->set_item_text(item1, TTR("Next Floor"));
+	// 		options->get_popup()->set_item_text(item2, TTR("Previous Floor"));
+	// 		spin_box_label->set_text(TTR("Floor:"));
+	// 	}
+	// }
+	// edit_axis = Vector3::Axis(new_axis);
+	// update_grid();
 }
 
 void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
@@ -1106,16 +1191,13 @@ void GridMapEditor::_draw_plane_grid(RID p_mesh_id, const Vector3 &p_axis_n1, co
 }
 
 void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
-	Vector3 edited_floor = node->get_meta("_editor_floor_", Vector3());
-
 	for (int i = 0; i < 3; i++) {
-		RS::get_singleton()->mesh_clear(grid[i]);
-		edit_floor[i] = edited_floor[i];
+		RS::get_singleton()->mesh_clear(grid_mesh[i]);
 	}
 
-	_draw_plane_grid(grid[0], Vector3(0, 1, 0), Vector3(0, 0, 1));
-	_draw_floor_grid(grid[1]);
-	_draw_plane_grid(grid[2], Vector3(1, 0, 0), Vector3(0, 1, 0));
+	_draw_plane_grid(grid_mesh[0], Vector3(0, 1, 0), Vector3(0, 0, 1));
+	_draw_floor_grid(grid_mesh[1]);
+	_draw_plane_grid(grid_mesh[2], Vector3(1, 0, 0), Vector3(0, 1, 0));
 }
 
 void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
@@ -1171,9 +1253,10 @@ void GridMapEditor::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			mesh_library_palette->connect("item_selected", callable_mp(this, &GridMapEditor::_item_selected_cbk));
 			for (int i = 0; i < 3; i++) {
-				grid[i] = RS::get_singleton()->mesh_create();
-				grid_instance[i] = RS::get_singleton()->instance_create2(grid[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+				grid_mesh[i] = RS::get_singleton()->mesh_create();
+				grid_instance[i] = RS::get_singleton()->instance_create2(grid_mesh[i], get_tree()->get_root()->get_world_3d()->get_scenario());
 				RenderingServer::get_singleton()->instance_set_layer_mask(grid_instance[i], 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
+				RenderingServer::get_singleton()->instance_set_visible(grid_instance[i], false);
 			}
 			_update_selection_transform();
 			_update_paste_indicator();
@@ -1185,9 +1268,9 @@ void GridMapEditor::_notification(int p_what) {
 
 			for (int i = 0; i < 3; i++) {
 				RS::get_singleton()->free(grid_instance[i]);
-				RS::get_singleton()->free(grid[i]);
+				RS::get_singleton()->free(grid_mesh[i]);
 				grid_instance[i] = RID();
-				grid[i] = RID();
+				grid_mesh[i] = RID();
 			}
 
 			selection.active = false;
@@ -1199,13 +1282,13 @@ void GridMapEditor::_notification(int p_what) {
 				return;
 			}
 
-			Transform3D xf = node->get_global_transform();
-
-			if (xf != grid_xform) {
-				for (int i = 0; i < 3; i++) {
-					RS::get_singleton()->instance_set_transform(grid_instance[i], xf * edit_grid_xform);
-				}
-				grid_xform = xf;
+			// if the transform of our GridMap node has been changed, update
+			// the grid.
+			Transform3D transform = node->get_global_transform();
+			if (transform != node_global_transform) {
+				node_global_transform = transform;
+				update_grid();
+				_update_selection_transform();
 			}
 		} break;
 
@@ -1253,12 +1336,17 @@ void GridMapEditor::_item_selected_cbk(int p_idx) {
 }
 
 void GridMapEditor::_floor_changed(float p_value) {
-	if (updating) {
-		return;
-	}
-
+	// update the floor number for the current plane we're editing
 	edit_floor[edit_axis] = p_value;
-	node->set_meta("_editor_floor_", Vector3(edit_floor[0], edit_floor[1], edit_floor[2]));
+
+	// save off editor floor numbers so the user can jump in and out of the
+	// gridmap editor without losing their place.
+	TypedArray<int> floors;
+	for (int i = 0; i < AXIS_MAX; i++) {
+		floors.push_back(edit_floor[i]);
+	}
+	node->set_meta("_editor_floor_", floors);
+
 	update_grid();
 	_update_selection_transform();
 }
@@ -1418,10 +1506,12 @@ GridMapEditor::GridMapEditor() {
 	info_message->set_anchors_and_offsets_preset(PRESET_FULL_RECT, PRESET_MODE_KEEP_SIZE, 8 * EDSCALE);
 	mesh_library_palette->add_child(info_message);
 
-	edit_axis = Vector3::AXIS_Y;
 	edit_floor[0] = -1;
 	edit_floor[1] = -1;
 	edit_floor[2] = -1;
+
+	edit_axis = AXIS_Y;
+	edit_plane = Plane();
 
 	inner_mat.instantiate();
 	inner_mat->set_albedo(Color(0.7, 0.7, 1.0, 0.2));
@@ -1453,8 +1543,8 @@ GridMapEditor::~GridMapEditor() {
 	_clear_clipboard_data();
 
 	for (int i = 0; i < 3; i++) {
-		if (grid[i].is_valid()) {
-			RenderingServer::get_singleton()->free(grid[i]);
+		if (grid_mesh[i].is_valid()) {
+			RenderingServer::get_singleton()->free(grid_mesh[i]);
 		}
 		if (grid_instance[i].is_valid()) {
 			RenderingServer::get_singleton()->free(grid_instance[i]);
@@ -1463,7 +1553,9 @@ GridMapEditor::~GridMapEditor() {
 			RenderingServer::get_singleton()->free(cursor_instance);
 		}
 	}
-	RenderingServer::get_singleton()->free(tile_mesh);
+	if (tile_mesh.is_valid()) {
+		RenderingServer::get_singleton()->free(tile_mesh);
+	}
 }
 
 void GridMapEditorPlugin::_notification(int p_what) {
