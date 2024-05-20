@@ -67,68 +67,64 @@ void GridMapEditor::_menu_option(int p_option) {
 		} break;
 
 		case MENU_OPTION_X_AXIS:
-			switch (node->get_cell_shape()) {
-				case GridMap::CELL_SHAPE_SQUARE:
-					edit_axis = AXIS_Z;
-					break;
-				case GridMap::CELL_SHAPE_HEXAGON:
-					// counter clockwise rotation
-					switch (edit_axis) {
-						case AXIS_S:
-							edit_axis = AXIS_Z;
-							break;
-						case AXIS_Z:
-							edit_axis = AXIS_Q;
-							break;
-						case AXIS_Q:
-							edit_axis = AXIS_X;
-							break;
-						default:
-							edit_axis = AXIS_S;
-							break;
-					}
-					break;
-				default:
-					ERR_PRINT_ED("unsupported cell shape");
-					break;
-			}
+			edit_axis = AXIS_X;
 			update_grid();
 			break;
 		case MENU_OPTION_Y_AXIS:
 			edit_axis = AXIS_Y;
 			update_grid();
 			break;
-
-		case MENU_OPTION_Z_AXIS: {
-			switch (node->get_cell_shape()) {
-				case GridMap::CELL_SHAPE_SQUARE:
-					edit_axis = AXIS_X;
+		case MENU_OPTION_Z_AXIS:
+			edit_axis = AXIS_Z;
+			update_grid();
+			break;
+		case MENU_OPTION_Q_AXIS:
+			edit_axis = AXIS_Q;
+			update_grid();
+			break;
+		case MENU_OPTION_R_AXIS:
+			edit_axis = AXIS_R;
+			update_grid();
+			break;
+		case MENU_OPTION_S_AXIS:
+			edit_axis = AXIS_S;
+			update_grid();
+			break;
+		case MENU_OPTION_ROTATE_AXIS_CW:
+			switch (edit_axis) {
+				case AXIS_Z:
+					edit_axis = AXIS_Q;
 					break;
-				case GridMap::CELL_SHAPE_HEXAGON:
-					// clockwise rotation
-					switch (edit_axis) {
-						case AXIS_X:
-							edit_axis = AXIS_Q;
-							break;
-						case AXIS_Q:
-							edit_axis = AXIS_Z;
-							break;
-						case AXIS_Z:
-							edit_axis = AXIS_S;
-							break;
-						default:
-							edit_axis = AXIS_X;
-							break;
-					}
+				case AXIS_Q:
+					edit_axis = AXIS_R;
+					break;
+				case AXIS_R:
+					edit_axis = AXIS_S;
 					break;
 				default:
-					ERR_PRINT_ED("unsupported cell shape");
+					edit_axis = AXIS_Z;
+					break;
+			}
+			update_grid();
+			break;
+		case MENU_OPTION_ROTATE_AXIS_CCW:
+			switch (edit_axis) {
+				case AXIS_R:
+					edit_axis = AXIS_Q;
+					break;
+				case AXIS_Q:
+					edit_axis = AXIS_Z;
+					break;
+				case AXIS_Z:
+					edit_axis = AXIS_S;
+					break;
+				default:
+					edit_axis = AXIS_R;
 					break;
 			}
 			update_grid();
 			break;
 
-		} break;
 		case MENU_OPTION_CURSOR_ROTATE_Y: {
 			Basis r;
 			real_t rotation = Math_PI / (node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE ? 2.0 : 3.0);
@@ -977,6 +973,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 	_build_tile_mesh();
 	_update_selection_transform();
 	_update_paste_indicator();
+	_update_options_menu();
 
 	spatial_editor = Object::cast_to<Node3DEditorPlugin>(EditorNode::get_singleton()->get_editor_plugin_screen());
 
@@ -1022,35 +1019,41 @@ void GridMapEditor::update_grid() {
 
 	real_t cell_depth;
 	Transform3D grid_transform;
+	Menu menu_axis;
 
 	// switch the edit plane and pick the new active grid and rotate if necessary
 	switch (edit_axis) {
 		case AXIS_X: // also hex AXIS_R
-			edit_plane.normal = Vector3(0, 0, 1);
-			active_grid_instance = grid_instance[2];
-			cell_depth = is_hex ? (1.5 * cell_size.x) : cell_size.x;
+			edit_plane.normal = Vector3(1, 0, 0);
+			active_grid_instance = grid_instance[0];
+			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.z;
+			menu_axis = is_hex ? MENU_OPTION_R_AXIS : MENU_OPTION_X_AXIS;
 			break;
 		case AXIS_Y:
 			edit_plane.normal = Vector3(0, 1, 0);
 			active_grid_instance = grid_instance[1];
 			cell_depth = node->get_cell_size().y;
+			menu_axis = MENU_OPTION_Y_AXIS;
 			break;
 		case AXIS_Z:
-			edit_plane.normal = Vector3(1, 0, 0);
-			active_grid_instance = grid_instance[0];
-			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.z;
+			edit_plane.normal = Vector3(0, 0, 1);
+			active_grid_instance = grid_instance[2];
+			cell_depth = is_hex ? (1.5 * cell_size.x) : cell_size.x;
+			menu_axis = MENU_OPTION_Z_AXIS;
 			break;
 		case AXIS_Q:
 			edit_plane.normal = Vector3(SQRT3_2, 0, -0.5).normalized();
 			active_grid_instance = grid_instance[2];
 			cell_depth = 1.5 * cell_size.x;
 			grid_transform.rotate(Vector3(0, 1, 0), -Math_PI / 3.0);
+			menu_axis = MENU_OPTION_Q_AXIS;
 			break;
 		case AXIS_S:
 			edit_plane.normal = Vector3(SQRT3_2, 0, 0.5).normalized();
 			active_grid_instance = grid_instance[2];
 			cell_depth = 1.5 * cell_size.x;
 			grid_transform.rotate(Vector3(0, 1, 0), Math_PI / 3.0);
+			menu_axis = MENU_OPTION_S_AXIS;
 			break;
 		default:
 			ERR_PRINT_ED("unsupported edit plane axis");
@@ -1077,6 +1080,14 @@ void GridMapEditor::update_grid() {
 			node->get_global_transform() * grid_transform);
 
 	floor->set_value(edit_floor[edit_axis]);
+
+	PopupMenu *popup = options->get_popup();
+	for (int i = MENU_OPTION_X_AXIS; i <= MENU_OPTION_S_AXIS; i++) {
+		int index = popup->get_item_index(i);
+		if (index != -1) {
+			popup->set_item_checked(index, menu_axis == i);
+		}
+	}
 	// XXX Figure out menu updates for new axis
 	//
 	// int new_axis = p_option - MENU_OPTION_X_AXIS;
@@ -1203,6 +1214,7 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
 	_draw_grids(node->get_cell_size());
 	_build_tile_mesh();
+	_update_options_menu();
 }
 
 void GridMapEditor::_build_tile_mesh() {
@@ -1261,6 +1273,7 @@ void GridMapEditor::_notification(int p_what) {
 			_update_selection_transform();
 			_update_paste_indicator();
 			_update_theme();
+			_update_options_menu();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -1360,12 +1373,75 @@ void GridMapEditor::_bind_methods() {
 	ClassDB::bind_method("_set_selection", &GridMapEditor::_set_selection);
 }
 
+void GridMapEditor::_update_options_menu() {
+	PopupMenu *popup = options->get_popup();
+
+	// save off the current settings
+	bool paste_selects = false;
+	if (int index = popup->get_item_index(MENU_OPTION_PASTE_SELECTS) != -1) {
+		popup->is_item_checked(index);
+	}
+
+	// clear the menu
+	popup->clear();
+
+	// rebuild the menu
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/previous_floor"), MENU_OPTION_PREV_LEVEL);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/next_floor"), MENU_OPTION_NEXT_LEVEL);
+	popup->add_separator();
+
+	// shape-specific edit axis options
+	if (node && node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON) {
+		// hex cells have five edit axis; we add shortcuts for Y, two more for
+		// rotating a vertical plane clockwise and counter clockwise.
+		popup->add_radio_check_item(TTR("Edit Q Axis"), MENU_OPTION_Q_AXIS);
+		popup->add_radio_check_item(TTR("Edit R Axis"), MENU_OPTION_R_AXIS);
+		popup->add_radio_check_item(TTR("Edit S Axis"), MENU_OPTION_S_AXIS);
+		popup->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_y_axis"), MENU_OPTION_Y_AXIS);
+		popup->add_radio_check_item(TTR("Edit Z Axis"), MENU_OPTION_Z_AXIS);
+		popup->add_shortcut(ED_GET_SHORTCUT("grid_map/edit_plane_rotate_cw"), MENU_OPTION_ROTATE_AXIS_CW);
+		popup->add_shortcut(ED_GET_SHORTCUT("grid_map/edit_plane_rotate_ccw"), MENU_OPTION_ROTATE_AXIS_CCW);
+	} else {
+		// square cell shape only uses XYZ with per-plane shortcuts
+		popup->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_x_axis"), MENU_OPTION_X_AXIS);
+		popup->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_y_axis"), MENU_OPTION_Y_AXIS);
+		popup->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_z_axis"), MENU_OPTION_Z_AXIS);
+	}
+	popup->set_item_checked(popup->get_item_index(MENU_OPTION_Y_AXIS), true);
+
+	popup->add_separator();
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_x"), MENU_OPTION_CURSOR_ROTATE_X);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_y"), MENU_OPTION_CURSOR_ROTATE_Y);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_z"), MENU_OPTION_CURSOR_ROTATE_Z);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_x"), MENU_OPTION_CURSOR_BACK_ROTATE_X);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_y"), MENU_OPTION_CURSOR_BACK_ROTATE_Y);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_z"), MENU_OPTION_CURSOR_BACK_ROTATE_Z);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_clear_rotation"), MENU_OPTION_CURSOR_CLEAR_ROTATION);
+	popup->add_separator();
+	// TRANSLATORS: This is a toggle to select after pasting the new content.
+	popup->add_check_shortcut(ED_GET_SHORTCUT("grid_map/paste_selects"), MENU_OPTION_PASTE_SELECTS);
+	popup->set_item_checked(popup->get_item_index(MENU_OPTION_PASTE_SELECTS), paste_selects);
+	popup->add_separator();
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/duplicate_selection"), MENU_OPTION_SELECTION_DUPLICATE);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/cut_selection"), MENU_OPTION_SELECTION_CUT);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/clear_selection"), MENU_OPTION_SELECTION_CLEAR);
+	popup->add_shortcut(ED_GET_SHORTCUT("grid_map/fill_selection"), MENU_OPTION_SELECTION_FILL);
+
+	popup->add_separator();
+	popup->add_item(TTR("Settings..."), MENU_OPTION_GRIDMAP_SETTINGS);
+}
+
 GridMapEditor::GridMapEditor() {
 	ED_SHORTCUT("grid_map/previous_floor", TTR("Previous Floor"), Key::Q, true);
 	ED_SHORTCUT("grid_map/next_floor", TTR("Next Floor"), Key::E, true);
 	ED_SHORTCUT("grid_map/edit_x_axis", TTR("Edit X Axis"), Key::Z, true);
 	ED_SHORTCUT("grid_map/edit_y_axis", TTR("Edit Y Axis"), Key::X, true);
 	ED_SHORTCUT("grid_map/edit_z_axis", TTR("Edit Z Axis"), Key::C, true);
+
+	// TRANSLATORS: These two shortcuts are only used with hex-shaped cells to rotate an edit plane about the Y axis clockwise or counter-clockwise.
+	ED_SHORTCUT("grid_map/edit_plane_rotate_cw", TTR("Rotate Edit Plane Clockwise"), Key::C, true);
+	ED_SHORTCUT("grid_map/edit_plane_rotate_ccw", TTR("Rotate Edit Plane Counter-Clockwise"), Key::Z, true);
+
 	ED_SHORTCUT("grid_map/cursor_rotate_x", TTR("Cursor Rotate X"), Key::A, true);
 	ED_SHORTCUT("grid_map/cursor_rotate_y", TTR("Cursor Rotate Y"), Key::S, true);
 	ED_SHORTCUT("grid_map/cursor_rotate_z", TTR("Cursor Rotate Z"), Key::D, true);
@@ -1411,29 +1487,7 @@ GridMapEditor::GridMapEditor() {
 	spatial_editor_hb->hide();
 
 	options->set_text(TTR("Grid Map"));
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/previous_floor"), MENU_OPTION_PREV_LEVEL);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/next_floor"), MENU_OPTION_NEXT_LEVEL);
-	options->get_popup()->add_separator();
-	options->get_popup()->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_x_axis"), MENU_OPTION_X_AXIS);
-	options->get_popup()->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_y_axis"), MENU_OPTION_Y_AXIS);
-	options->get_popup()->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_z_axis"), MENU_OPTION_Z_AXIS);
-	options->get_popup()->set_item_checked(options->get_popup()->get_item_index(MENU_OPTION_Y_AXIS), true);
-	options->get_popup()->add_separator();
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_x"), MENU_OPTION_CURSOR_ROTATE_X);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_y"), MENU_OPTION_CURSOR_ROTATE_Y);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_rotate_z"), MENU_OPTION_CURSOR_ROTATE_Z);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_x"), MENU_OPTION_CURSOR_BACK_ROTATE_X);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_y"), MENU_OPTION_CURSOR_BACK_ROTATE_Y);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_back_rotate_z"), MENU_OPTION_CURSOR_BACK_ROTATE_Z);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cursor_clear_rotation"), MENU_OPTION_CURSOR_CLEAR_ROTATION);
-	options->get_popup()->add_separator();
-	// TRANSLATORS: This is a toggle to select after pasting the new content.
-	options->get_popup()->add_check_shortcut(ED_GET_SHORTCUT("grid_map/paste_selects"), MENU_OPTION_PASTE_SELECTS);
-	options->get_popup()->add_separator();
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/duplicate_selection"), MENU_OPTION_SELECTION_DUPLICATE);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/cut_selection"), MENU_OPTION_SELECTION_CUT);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/clear_selection"), MENU_OPTION_SELECTION_CLEAR);
-	options->get_popup()->add_shortcut(ED_GET_SHORTCUT("grid_map/fill_selection"), MENU_OPTION_SELECTION_FILL);
+	_update_options_menu();
 
 	options->get_popup()->add_separator();
 	options->get_popup()->add_item(TTR("Settings..."), MENU_OPTION_GRIDMAP_SETTINGS);

@@ -164,6 +164,11 @@ class GridMapEditor : public VBoxContainer {
 		MENU_OPTION_X_AXIS,
 		MENU_OPTION_Y_AXIS,
 		MENU_OPTION_Z_AXIS,
+		MENU_OPTION_Q_AXIS,
+		MENU_OPTION_R_AXIS,
+		MENU_OPTION_S_AXIS,
+		MENU_OPTION_ROTATE_AXIS_CW,
+		MENU_OPTION_ROTATE_AXIS_CCW,
 		MENU_OPTION_CURSOR_ROTATE_Y,
 		MENU_OPTION_CURSOR_ROTATE_X,
 		MENU_OPTION_CURSOR_ROTATE_Z,
@@ -195,6 +200,7 @@ class GridMapEditor : public VBoxContainer {
 	void _draw_plane_grid(RID p_grid, const Vector3 &p_axis_n1, const Vector3 &p_axis_n2);
 	void _draw_grids(const Vector3 &p_cell_size);
 	void _update_cell_shape(const GridMap::CellShape cell_shape);
+	void _update_options_menu();
 	void _build_tile_mesh();
 	void _configure();
 	void _menu_option(int);

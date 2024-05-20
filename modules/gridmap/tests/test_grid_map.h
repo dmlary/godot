@@ -255,45 +255,6 @@ TEST_CASE("[SceneTree][GridMap] map_to_local() with hex cells") {
 	CHECK(cells.has(Vector3i(-1, 0, 1)));
 	CHECK(cells.size() == 5);
 }
-
-TEST_CASE("[SceneTree][GridMap] rotation tests") {
-	GridMap map;
-	map.set_cell_shape(GridMap::CELL_SHAPE_HEXAGON);
-	map.set_cell_size(Vector3(1.0, 1.0, 1.0));
-
-	Vector3 axis;
-	real_t angle;
-	Vector3 vector = Vector3(1, 0, 0); // east
-	Basis basis; // rotation 0
-	basis.get_axis_angle(axis, angle);
-	print_line("basis (y-up) " + String(basis) +
-			", axis " + String(axis) +
-			", angle " + String::num_real(angle) +
-			", vector " + basis.xform(vector));
-	basis.rotate(Vector3(0, 0, 1), 90);
-	basis.get_axis_angle(axis, angle);
-	print_line("basis ( 0) " + String(basis) +
-			", axis " + String(axis) +
-			", angle " + String::num_real(angle) +
-			", vector " + basis.xform(vector));
-	basis.rotate(Vector3(0, 1, 0), 60);
-	basis.get_axis_angle(axis, angle);
-	print_line("basis ( 60) " + String(basis) +
-			", axis " + String(axis) +
-			", angle " + String::num_real(angle) +
-			", vector " + basis.xform(vector));
-	basis.rotate(Vector3(0, 1, 0), 120);
-	basis.get_axis_angle(axis, angle);
-	print_line("basis (120) " + String(basis) +
-			", axis " + String(axis) +
-			", angle " + String::num_real(angle) +
-			", vector " + basis.xform(vector));
-
-	// Extract the normal vector from the Basis. Let's use the third column as the normal.
-	// Vector3 normal = axis_y.get_column(2).normalized();
-
-	// Normalize the axis (it should already be normalized, but ensure it)
-}
 } // namespace TestGridMap
 
 #endif // TEST_GRID_MAP_H
