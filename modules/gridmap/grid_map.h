@@ -33,7 +33,6 @@
 
 #include "scene/3d/node_3d.h"
 #include "scene/resources/mesh_library.h"
-#include "scene/resources/multimesh.h"
 
 // SQRT(3)/2; used both in the editor and the GridMap.  Due to the division, it
 // didn't fit the pattern of other Math_SQRTN defines, so I'm putting it here.

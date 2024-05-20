@@ -1463,7 +1463,6 @@ Array GridMap::get_meshes() const {
 		return Array();
 	}
 
-	Vector3 ofs = _get_offset();
 	Array meshes;
 
 	for (const KeyValue<IndexKey, Cell> &E : cell_map) {
@@ -1478,7 +1477,7 @@ Array GridMap::get_meshes() const {
 
 		IndexKey ik = E.key;
 
-		Vector3 cellpos = Vector3(ik.x, ik.y, ik.z);
+		Vector3 cellpos = map_to_local(Vector3(ik.x, ik.y, ik.z));
 
 		Transform3D xform;
 
@@ -1488,7 +1487,7 @@ Array GridMap::get_meshes() const {
 			xform.basis = _ortho_bases_hex[E.value.rot];
 		}
 
-		xform.set_origin(cellpos * cell_size + ofs);
+		xform.set_origin(cellpos);
 		xform.basis.scale(Vector3(cell_scale, cell_scale, cell_scale));
 
 		meshes.push_back(xform * mesh_library->get_item_mesh_transform(id));
