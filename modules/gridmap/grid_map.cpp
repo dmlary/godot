@@ -596,6 +596,35 @@ int GridMap::get_orthogonal_index_from_basis(const Basis &p_basis) const {
 	return 0;
 }
 
+TypedArray<Vector3i> GridMap::get_cell_neighbors(const Vector3i cell) const {
+	TypedArray<Vector3i> out;
+	switch (cell_shape) {
+		case CELL_SHAPE_SQUARE:
+			out.push_back(cell + Vector3(1, 0, 0));
+			out.push_back(cell + Vector3(-1, 0, 0));
+			out.push_back(cell + Vector3(0, 1, 0));
+			out.push_back(cell + Vector3(0, -1, 0));
+			out.push_back(cell + Vector3(0, 0, 1));
+			out.push_back(cell + Vector3(0, 0, -1));
+			break;
+		case CELL_SHAPE_HEXAGON:
+			// each of the six horizontal directions
+			out.push_back(cell + Vector3(1, 0, 0));
+			out.push_back(cell + Vector3(1, 0, -1));
+			out.push_back(cell + Vector3(0, 0, -1));
+			out.push_back(cell + Vector3(-1, 0, 0));
+			out.push_back(cell + Vector3(-1, 0, 1));
+			out.push_back(cell + Vector3(0, 0, 1));
+			// and up and down
+			out.push_back(cell + Vector3(0, 1, 0));
+			out.push_back(cell + Vector3(0, -1, 0));
+			break;
+		default:
+			ERR_PRINT_ED("unsupported cell shape");
+	}
+	return out;
+}
+
 // based on blog post https://observablehq.com/@jrus/hexround
 static inline Vector2i axial_round(real_t q_in, real_t r_in) {
 	int q = round(q_in);
@@ -1368,6 +1397,7 @@ void GridMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_cell_item_basis", "position"), &GridMap::get_cell_item_basis);
 	ClassDB::bind_method(D_METHOD("get_basis_with_orthogonal_index", "index"), &GridMap::get_basis_with_orthogonal_index);
 	ClassDB::bind_method(D_METHOD("get_orthogonal_index_from_basis", "basis"), &GridMap::get_orthogonal_index_from_basis);
+	ClassDB::bind_method(D_METHOD("get_cell_neighbors", "cell"), &GridMap::get_cell_neighbors);
 
 	ClassDB::bind_method(D_METHOD("local_to_map", "local_position"), &GridMap::local_to_map);
 	ClassDB::bind_method(D_METHOD("map_to_local", "map_position"), &GridMap::map_to_local);

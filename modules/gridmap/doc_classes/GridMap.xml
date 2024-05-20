@@ -69,6 +69,13 @@
 				The orientation of the cell at the given grid coordinates. [code]-1[/code] is returned if the cell is empty.
 			</description>
 		</method>
+		<method name="get_cell_neighbors" qualifiers="const">
+			<return type="Vector3i[]" />
+			<param index="0" name="p_position" type="Vector3i" />
+			<description>
+				Returns an array of [Vector3i] map coordinates that neighbor the cell at coordinates [code]p_position[/code], including unused cells.  Use [method get_cell_item] to check if the cell is used.
+			</description>
+		</method>
 		<method name="get_collision_layer_value" qualifiers="const">
 			<return type="bool" />
 			<param index="0" name="layer_number" type="int" />
@@ -121,6 +128,14 @@
 			<param index="0" name="local_position" type="Vector3" />
 			<description>
 				Returns the map coordinates of the cell containing the given [param local_position]. If [param local_position] is in global coordinates, consider using [method Node3D.to_local] before passing it to this method. See also [method map_to_local].
+			</description>
+		</method>
+		<method name="local_region_to_map" qualifiers="const">
+			<return type="Vector3i[]" />
+			<param index="0" name="a" type="Vector3" />
+			<param index="1" name="b" type="Vector3" />
+			<description>
+				Returns an array containing map coordinates for all cells within the GridMap's local coordinate space that fall within the axis-aligned bounding box defined by points [code]a[/code] and [code]b[/code].  See also [method local_to_map].
 			</description>
 		</method>
 		<method name="make_baked_meshes">

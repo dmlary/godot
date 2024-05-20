@@ -294,11 +294,11 @@ public:
 	Basis get_cell_item_basis(const Vector3i &p_position) const;
 	Basis get_basis_with_orthogonal_index(int p_index) const;
 	int get_orthogonal_index_from_basis(const Basis &p_basis) const;
+	TypedArray<Vector3i> get_cell_neighbors(const Vector3i) const;
 
 	Vector3i local_to_map(const Vector3 &p_local_position) const;
 	Vector3 map_to_local(const Vector3i &p_map_position) const;
 
-	TypedArray<Vector3i> map_region_to_map(Vector3i a, Vector3i b) const;
 	TypedArray<Vector3i> local_region_to_map(Vector3 a, Vector3 b) const;
 
 	void set_cell_scale(float p_scale);

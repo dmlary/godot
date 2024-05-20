@@ -255,6 +255,66 @@ TEST_CASE("[SceneTree][GridMap] map_to_local() with hex cells") {
 	CHECK(cells.has(Vector3i(-1, 0, 1)));
 	CHECK(cells.size() == 5);
 }
+
+TEST_CASE("[SceneTree][GridMap] get_cell_neighbors() square cells") {
+	GridMap map;
+	map.set_cell_shape(GridMap::CELL_SHAPE_SQUARE);
+
+	SUBCASE("cell (0,0,0)") {
+		TypedArray<Vector3i> cells = map.get_cell_neighbors(Vector3i(0, 0, 0));
+		CHECK(cells.size() == 6);
+		CHECK(cells.has(Vector3i(1, 0, 0)));
+		CHECK(cells.has(Vector3i(0, 1, 0)));
+		CHECK(cells.has(Vector3i(0, 0, 1)));
+		CHECK(cells.has(Vector3i(-1, 0, 0)));
+		CHECK(cells.has(Vector3i(0, -1, 0)));
+		CHECK(cells.has(Vector3i(0, 0, -1)));
+	}
+
+	SUBCASE("cell (-12,10,100)") {
+		Vector3i cell = Vector3i(-12, 10, 100);
+		TypedArray<Vector3i> cells = map.get_cell_neighbors(cell);
+		CHECK(cells.size() == 6);
+		CHECK(cells.has(cell + Vector3i(1, 0, 0)));
+		CHECK(cells.has(cell + Vector3i(0, 1, 0)));
+		CHECK(cells.has(cell + Vector3i(0, 0, 1)));
+		CHECK(cells.has(cell + Vector3i(-1, 0, 0)));
+		CHECK(cells.has(cell + Vector3i(0, -1, 0)));
+		CHECK(cells.has(cell + Vector3i(0, 0, -1)));
+	}
+}
+
+TEST_CASE("[SceneTree][GridMap] get_cell_neighbors() hex cells") {
+	GridMap map;
+	map.set_cell_shape(GridMap::CELL_SHAPE_HEXAGON);
+
+	SUBCASE("cell (0,0,0)") {
+		TypedArray<Vector3i> cells = map.get_cell_neighbors(Vector3i(0, 0, 0));
+		CHECK(cells.size() == 8);
+		CHECK(cells.has(Vector3i(1, 0, 0)));
+		CHECK(cells.has(Vector3i(1, 0, -1)));
+		CHECK(cells.has(Vector3i(0, 0, -1)));
+		CHECK(cells.has(Vector3i(-1, 0, 0)));
+		CHECK(cells.has(Vector3i(-1, 0, 1)));
+		CHECK(cells.has(Vector3i(0, 0, 1)));
+		CHECK(cells.has(Vector3i(0, -1, 0)));
+		CHECK(cells.has(Vector3i(0, 1, 0)));
+	}
+
+	SUBCASE("cell (-12,10,100)") {
+		Vector3i cell = Vector3i(-12, 10, 100);
+		TypedArray<Vector3i> cells = map.get_cell_neighbors(cell);
+		CHECK(cells.size() == 8);
+		CHECK(cells.has(cell + Vector3i(1, 0, 0)));
+		CHECK(cells.has(cell + Vector3i(1, 0, -1)));
+		CHECK(cells.has(cell + Vector3i(0, 0, -1)));
+		CHECK(cells.has(cell + Vector3i(-1, 0, 0)));
+		CHECK(cells.has(cell + Vector3i(-1, 0, 1)));
+		CHECK(cells.has(cell + Vector3i(0, 0, 1)));
+		CHECK(cells.has(cell + Vector3i(0, -1, 0)));
+		CHECK(cells.has(cell + Vector3i(0, 1, 0)));
+	}
+}
 } // namespace TestGridMap
 
 #endif // TEST_GRID_MAP_H
