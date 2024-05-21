@@ -117,7 +117,6 @@ class GridMapEditor : public VBoxContainer {
 	RID grid_mesh[3];
 	RID grid_instance[3];
 	RID cursor_instance;
-	RID tile_mesh;
 
 	struct ClipboardItem {
 		int cell_item = 0;
@@ -138,9 +137,11 @@ class GridMapEditor : public VBoxContainer {
 		Vector3 begin;
 		Vector3 end;
 		bool active = false;
-		Vector<RID> cells;
 	} selection;
 	Selection last_selection;
+	RID selection_tile_mesh;
+	RID selection_multimesh;
+	RID selection_instance;
 
 	struct PasteIndicator {
 		Vector3i current_cell;
@@ -201,7 +202,7 @@ class GridMapEditor : public VBoxContainer {
 	void _draw_grids(const Vector3 &p_cell_size);
 	void _update_cell_shape(const GridMap::CellShape cell_shape);
 	void _update_options_menu();
-	void _build_tile_mesh();
+	void _build_selection_meshes();
 	void _configure();
 	void _menu_option(int);
 	void update_palette();

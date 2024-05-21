@@ -306,16 +306,12 @@ void GridMapEditor::_update_selection_transform() {
 
 	// to simplify the code, just clear the existing selection cells each time
 	// we're called
-	for (RID rid : selection.cells) {
-		rs->free(rid);
+	if (selection_instance.is_valid()) {
+		rs->free(selection_instance);
 	}
-	selection.cells.clear();
 	if (!selection.active) {
 		return;
 	}
-
-	// grab the node transform so we can apply it to the cell instances
-	Transform3D node_transform = node->get_global_transform();
 
 	// general scaling and translation for the cell mesh.  The translation is
 	// necessary because the meshes are centered around the origin, and we
@@ -326,16 +322,21 @@ void GridMapEditor::_update_selection_transform() {
 										 .scaled_local(node->get_cell_size())
 										 .translated(Vector3(0, node->get_center_y() ? 0 : (node->get_cell_size().y / 2.0), 0));
 
+	// get the cells in our selection area
 	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
+
+	// add the cells to our selection multimesh
+	rs->multimesh_allocate_data(selection_multimesh, cells.size(), RS::MULTIMESH_TRANSFORM_3D);
 	for (int i = 0; i < cells.size(); i++) {
 		Vector3i cell = cells[i];
-
-		RID instance = rs->instance_create2(tile_mesh, get_tree()->get_root()->get_world_3d()->get_scenario());
-		rs->instance_set_layer_mask(instance, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
-		rs->instance_set_transform(instance,
-				node_transform * cell_transform.translated(node->map_to_local(cell)));
-		selection.cells.push_back(instance);
+		rs->multimesh_instance_set_transform(selection_multimesh, i,
+				cell_transform.translated(node->map_to_local(cell)));
 	}
+
+	// create an instance of the multimesh with the transform of our node
+	selection_instance = rs->instance_create2(selection_multimesh, get_tree()->get_root()->get_world_3d()->get_scenario());
+	rs->instance_set_transform(selection_instance, node->get_global_transform());
+	rs->instance_set_layer_mask(selection_instance, Node3DEditorViewport::MISC_TOOL_LAYER);
 }
 
 void GridMapEditor::_validate_selection() {
@@ -970,7 +971,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 
 	input_action = INPUT_NONE;
 	selection.active = false;
-	_build_tile_mesh();
+	_build_selection_meshes();
 	_update_selection_transform();
 	_update_paste_indicator();
 	_update_options_menu();
@@ -1213,14 +1214,18 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 
 void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
 	_draw_grids(node->get_cell_size());
-	_build_tile_mesh();
+	_build_selection_meshes();
 	_update_options_menu();
 }
 
-void GridMapEditor::_build_tile_mesh() {
-	if (tile_mesh.is_valid()) {
-		RS::get_singleton()->free(tile_mesh);
-		tile_mesh = RID();
+void GridMapEditor::_build_selection_meshes() {
+	if (selection_tile_mesh.is_valid()) {
+		RS::get_singleton()->free(selection_tile_mesh);
+		selection_tile_mesh = RID();
+	}
+	if (selection_multimesh.is_valid()) {
+		RS::get_singleton()->free(selection_multimesh);
+		selection_multimesh = RID();
 	}
 
 	// we can get called when node is null
@@ -1244,13 +1249,16 @@ void GridMapEditor::_build_tile_mesh() {
 	}
 
 	RenderingServer *rs = RS::get_singleton();
-	tile_mesh = rs->mesh_create();
-	rs->mesh_add_surface_from_arrays(tile_mesh, RS::PRIMITIVE_TRIANGLES, arr);
-	rs->mesh_surface_set_material(tile_mesh, 0, inner_mat->get_rid());
-	rs->instance_set_layer_mask(tile_mesh, 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
+	selection_tile_mesh = rs->mesh_create();
+	rs->mesh_add_surface_from_arrays(selection_tile_mesh, RS::PRIMITIVE_TRIANGLES, arr);
+	rs->mesh_surface_set_material(selection_tile_mesh, 0, inner_mat->get_rid());
 
 	// TODO: want to add an outline to the tile, but it could significantly
 	// complicate this code.
+
+	// create the multimesh for rendering the tile mesh in multiple locations.
+	selection_multimesh = rs->multimesh_create();
+	rs->multimesh_set_mesh(selection_multimesh, selection_tile_mesh);
 }
 
 void GridMapEditor::_update_theme() {
@@ -1607,8 +1615,11 @@ GridMapEditor::~GridMapEditor() {
 			RenderingServer::get_singleton()->free(cursor_instance);
 		}
 	}
-	if (tile_mesh.is_valid()) {
-		RenderingServer::get_singleton()->free(tile_mesh);
+	if (selection_multimesh.is_valid()) {
+		RenderingServer::get_singleton()->free(selection_multimesh);
+	}
+	if (selection_tile_mesh.is_valid()) {
+		RenderingServer::get_singleton()->free(selection_tile_mesh);
 	}
 }
 
