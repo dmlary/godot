@@ -1233,16 +1233,84 @@ void GridMapEditor::_build_selection_meshes() {
 		return;
 	}
 
-	Array arr;
-	arr.resize(RS::ARRAY_MAX);
+	Array mesh_array;
+	mesh_array.resize(RS::ARRAY_MAX);
+	Array lines_array;
+	lines_array.resize(RS::ARRAY_MAX);
 
 	switch (node->get_cell_shape()) {
 		case GridMap::CELL_SHAPE_SQUARE: {
-			BoxMesh::create_mesh_array(arr, Vector3(1, 1, 1));
+			BoxMesh::create_mesh_array(mesh_array, Vector3(1, 1, 1));
+
+			/*
+				  (2)-----(3)               Y
+				   | \     | \              |
+				   |  (1)-----(0)           o---X
+				   |   |   |   |             \
+				  (6)--|--(7)  |              Z
+					 \ |     \ |
+					  (5)-----(4)
+			*/
+			lines_array[RS::ARRAY_VERTEX] = Vector<Vector3>({
+					Vector3(0.5, 0.5, 0.5), // 0
+					Vector3(-0.5, 0.5, 0.5), // 1
+					Vector3(-0.5, 0.5, -0.5), // 2
+					Vector3(0.5, 0.5, -0.5), // 3
+					Vector3(0.5, -0.5, 0.5), // 4
+					Vector3(-0.5, -0.5, 0.5), // 5
+					Vector3(-0.5, -0.5, -0.5), // 6
+					Vector3(0.5, -0.5, -0.5) // 7
+			});
+			lines_array[RS::ARRAY_INDEX] = Vector<int>({
+					0, 1, 2, 3, // top
+					7, 4, 5, 6, // bottom
+					7, 3, 0, 4, // right
+					5, 1, 2, 6, // left
+			});
 			break;
 		}
 		case GridMap::CELL_SHAPE_HEXAGON:
-			CylinderMesh::create_mesh_array(arr, 1.0, 1.0, 1, 6, 1);
+			CylinderMesh::create_mesh_array(mesh_array, 1.0, 1.0, 1, 6, 1);
+
+			/*
+							(0)             Y
+						   /   \            |
+						(1)     (5)         o---X
+						 |       |           \
+						(2)     (4)           Z
+						 | \   / |
+						 |  (3)  |
+						 |   |   |
+						 |  (6)  |
+						 | / | \ |
+						(7)  |  (b)
+						 |   |   |
+						(8)  |  (a)
+						   \ | /
+							(9)
+			*/
+
+			lines_array[RS::ARRAY_VERTEX] = Vector<Vector3>({
+					Vector3(0.0, 0.5, -1.0), // 0
+					Vector3(-SQRT3_2, 0.5, -0.5), // 1
+					Vector3(-SQRT3_2, 0.5, 0.5), // 2
+					Vector3(0.0, 0.5, 1.0), // 3
+					Vector3(SQRT3_2, 0.5, 0.5), // 4
+					Vector3(SQRT3_2, 0.5, -0.5), // 5
+					Vector3(0.0, -0.5, -1.0), // 6
+					Vector3(-SQRT3_2, -0.5, -0.5), // 7
+					Vector3(-SQRT3_2, -0.5, 0.5), // 8
+					Vector3(0.0, -0.5, 1.0), // 9
+					Vector3(SQRT3_2, -0.5, 0.5), // 10 (0xa)
+					Vector3(SQRT3_2, -0.5, -0.5), // 11 (0xb)
+			});
+			lines_array[RS::ARRAY_INDEX] = Vector<int>({
+					0, 1, 2, 3, 4, 5, // top
+					11, 6, 7, 8, 9, 10, // bottom
+					11, 5, 0, 6, // northeast face
+					7, 1, 2, 8, // west face
+					9, 3, 4, 10, // southeast face
+			});
 			break;
 		default:
 			ERR_PRINT_ED("unsupported cell shape");
@@ -1250,11 +1318,12 @@ void GridMapEditor::_build_selection_meshes() {
 
 	RenderingServer *rs = RS::get_singleton();
 	selection_tile_mesh = rs->mesh_create();
-	rs->mesh_add_surface_from_arrays(selection_tile_mesh, RS::PRIMITIVE_TRIANGLES, arr);
+	rs->mesh_add_surface_from_arrays(selection_tile_mesh, RS::PRIMITIVE_TRIANGLES, mesh_array);
 	rs->mesh_surface_set_material(selection_tile_mesh, 0, inner_mat->get_rid());
 
-	// TODO: want to add an outline to the tile, but it could significantly
-	// complicate this code.
+	// add lines around the cell
+	rs->mesh_add_surface_from_arrays(selection_tile_mesh, RS::PRIMITIVE_LINE_STRIP, lines_array);
+	rs->mesh_surface_set_material(selection_tile_mesh, 1, outer_mat->get_rid());
 
 	// create the multimesh for rendering the tile mesh in multiple locations.
 	selection_multimesh = rs->multimesh_create();
