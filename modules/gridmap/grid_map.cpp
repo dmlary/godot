@@ -709,14 +709,7 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 	Vector3i top_right = local_to_map(b);
 
 	switch (cell_shape) {
-		case CELL_SHAPE_SQUARE: {
-			// fprintf(stderr, "(%d, %d, %d) -> (%d, %d, %d)\n",
-			// 		bottom_left.x,
-			// 		bottom_left.y,
-			// 		bottom_left.z,
-			// 		top_right.x,
-			// 		top_right.y,
-			// 		top_right.z);
+		case CELL_SHAPE_SQUARE:
 			for (int z = bottom_left.z; z <= top_right.z; z++) {
 				for (int y = bottom_left.y; y <= top_right.y; y++) {
 					for (int x = bottom_left.x; x <= top_right.x; x++) {
@@ -725,16 +718,9 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 					}
 				}
 			}
-		} break;
-		case CELL_SHAPE_HEXAGON: {
-			// fprintf(stderr, "axial (%d, %d, %d) -> (%d, %d, %d)\n",
-			// 		bottom_left.x,
-			// 		bottom_left.y,
-			// 		bottom_left.z,
-			// 		top_right.x,
-			// 		top_right.y,
-			// 		top_right.z);
+			break;
 
+		case CELL_SHAPE_HEXAGON: {
 			// we need the x coordinate of the center of the corner cells later.
 			// grab them now before we switch coordinate systems.
 			real_t left_x_center = map_to_local(bottom_left).x;
@@ -748,13 +734,6 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 			// in the array.
 			bottom_left = axial_to_oddr(bottom_left);
 			top_right = axial_to_oddr(top_right);
-			// fprintf(stderr, " oddr (%d, %d, %d) -> (%d, %d, %d)\n",
-			// 		bottom_left.x,
-			// 		bottom_left.y,
-			// 		bottom_left.z,
-			// 		top_right.x,
-			// 		top_right.y,
-			// 		top_right.z);
 
 			// Also, unlike square cells, the location of the corner of the
 			// region within a cell matters for hex cells, specifically the x
@@ -784,7 +763,6 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 			// if we start on an odd row, and the region starts to the right
 			// of center, we want to skip the even cells at x == a.x.
 			if ((bottom_left.z & 1) == 1 && a.x > left_x_center) {
-				// fprintf(stderr, "a.x %.02f, center %.02f\n", a.x, left_x_center);
 				x_min_delta[0] = 1;
 			}
 			// if we start on an even row, and the region starts to the left
@@ -800,12 +778,6 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 			} else if ((top_right.z & 1) == 0 && b.x <= right_x_center) {
 				x_max_delta[1] = -1;
 			}
-			// fprintf(stdout, "x_start [%d, %d], x_end [%d, %d]\n",
-			// 		x_min_delta[0],
-			// 		x_min_delta[1],
-			// 		x_max_delta[0],
-			// 		x_max_delta[1]);
-
 			for (int z = bottom_left.z; z <= top_right.z; z++) {
 				for (int y = bottom_left.y; y <= top_right.y; y++) {
 					int min_x = bottom_left.x + x_min_delta[z & 1];
@@ -813,17 +785,13 @@ TypedArray<Vector3i> GridMap::local_region_to_map(Vector3 a, Vector3 b) const {
 					for (int x = min_x; x <= max_x; x++) {
 						Vector3i oddr = Vector3i(x, y, z);
 						Vector3i axial = oddr_to_axial(oddr);
-						// fprintf(stderr, "push (%d, %d, %d) -> (%d, %d, %d)\n",
-						// 		x, y, z,
-						// 		axial.x,
-						// 		axial.y,
-						// 		axial.z);
 						out.push_back(axial);
 					}
 				}
 			}
+			break;
+		}
 
-		} break;
 		default:
 			ERR_PRINT_ED("unsupported cell shape");
 	}

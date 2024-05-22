@@ -541,14 +541,9 @@ void GridMapEditor::_set_clipboard_data() {
 	Vector3 begin = node->map_to_local(node->local_to_map(selection.begin));
 	Vector3 end = node->map_to_local(node->local_to_map(selection.end));
 	Vector3 selection_center = (end + begin) / 2.0;
-	// fprintf(stderr, "selection_center (%.02f, %.02f, %.02f)\n",
-	// 		selection_center.x, selection_center.y, selection_center.z);
 	Vector3 offset = node->map_to_local(node->local_to_map(selection_center));
-	// fprintf(stderr, "offset (%.02f, %.02f, %.02f)\n",
-	// 		offset.x, offset.y, offset.z);
 
-	TypedArray<Vector3i>
-			cells = node->local_region_to_map(selection.begin, selection.end);
+	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
 	for (int i = 0; i < cells.size(); i++) {
 		Vector3i cell = cells[i];
 		int id = node->get_cell_item(cell);
@@ -1075,13 +1070,16 @@ void GridMapEditor::update_grid() {
 		edit_plane.d += cell_depth * 0.1;
 	}
 
+	// make the editing grid visible
 	RenderingServer::get_singleton()
 			->instance_set_visible(active_grid_instance, true);
 	RenderingServer::get_singleton()->instance_set_transform(active_grid_instance,
 			node->get_global_transform() * grid_transform);
 
+	// update the UI floor indicator
 	floor->set_value(edit_floor[edit_axis]);
 
+	// update the option menu to show the correct axis is selected
 	PopupMenu *popup = options->get_popup();
 	for (int i = MENU_OPTION_X_AXIS; i <= MENU_OPTION_S_AXIS; i++) {
 		int index = popup->get_item_index(i);
@@ -1089,29 +1087,6 @@ void GridMapEditor::update_grid() {
 			popup->set_item_checked(index, menu_axis == i);
 		}
 	}
-	// XXX Figure out menu updates for new axis
-	//
-	// int new_axis = p_option - MENU_OPTION_X_AXIS;
-	// for (int i = 0; i < 3; i++) {
-	// 	int idx = options->get_popup()->get_item_index(MENU_OPTION_X_AXIS + i);
-	// 	options->get_popup()->set_item_checked(idx, i == new_axis);
-	// }
-	//
-	// if (edit_axis != new_axis) {
-	// 	int item1 = options->get_popup()->get_item_index(MENU_OPTION_NEXT_LEVEL);
-	// 	int item2 = options->get_popup()->get_item_index(MENU_OPTION_PREV_LEVEL);
-	// 	if (edit_axis == Vector3::AXIS_Y) {
-	// 		options->get_popup()->set_item_text(item1, TTR("Next Plane"));
-	// 		options->get_popup()->set_item_text(item2, TTR("Previous Plane"));
-	// 		spin_box_label->set_text(TTR("Plane:"));
-	// 	} else if (new_axis == Vector3::AXIS_Y) {
-	// 		options->get_popup()->set_item_text(item1, TTR("Next Floor"));
-	// 		options->get_popup()->set_item_text(item2, TTR("Previous Floor"));
-	// 		spin_box_label->set_text(TTR("Floor:"));
-	// 	}
-	// }
-	// edit_axis = Vector3::Axis(new_axis);
-	// update_grid();
 }
 
 void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
@@ -1138,10 +1113,6 @@ void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
 	for (int x = -GRID_CURSOR_SIZE; x <= GRID_CURSOR_SIZE; x++) {
 		for (int z = -GRID_CURSOR_SIZE; z <= GRID_CURSOR_SIZE; z++) {
 			Vector3 center = node->map_to_local(Vector3(x, 0, z));
-			if (x == 0 && z == 0) {
-				fprintf(stderr, "center of (0, 0) @ (%.02f, %.02f, %.02f)\n",
-						center.x, center.y, center.z);
-			}
 
 			for (int i = 1; i < shape_points.size(); i++) {
 				grid_points.append(center + Vector3(shape_points[i - 1].x * cell_size.x, 0, shape_points[i - 1].y * cell_size.z));
@@ -1170,6 +1141,10 @@ void GridMapEditor::_draw_plane_grid(RID p_mesh_id, const Vector3 &p_axis_n1, co
 	Vector3 cell_size = node->get_cell_size();
 	Vector3 axis_n1 = p_axis_n1 * cell_size;
 	Vector3 axis_n2 = p_axis_n2 * cell_size;
+
+	if (node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON) {
+		axis_n1 *= Math_SQRT3;
+	}
 
 	for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
 		for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
@@ -1243,14 +1218,14 @@ void GridMapEditor::_build_selection_meshes() {
 			BoxMesh::create_mesh_array(mesh_array, Vector3(1, 1, 1));
 
 			/*
-				  (2)-----(3)               Y
-				   | \     | \              |
-				   |  (1)-----(0)           o---X
-				   |   |   |   |             \
-				  (6)--|--(7)  |              Z
-					 \ |     \ |
-					  (5)-----(4)
-			*/
+			 *     (2)-----(3)               Y
+			 *      | \     | \              |
+			 *      |  (1)-----(0)           o---X
+			 *      |   |   |   |             \
+			 *     (6)--|--(7)  |              Z
+			 *        \ |     \ |
+			 *         (5)-----(4)
+			 */
 			lines_array[RS::ARRAY_VERTEX] = Vector<Vector3>({
 					Vector3(0.5, 0.5, 0.5), // 0
 					Vector3(-0.5, 0.5, 0.5), // 1
@@ -1273,22 +1248,22 @@ void GridMapEditor::_build_selection_meshes() {
 			CylinderMesh::create_mesh_array(mesh_array, 1.0, 1.0, 1, 6, 1);
 
 			/*
-							(0)             Y
-						   /   \            |
-						(1)     (5)         o---X
-						 |       |           \
-						(2)     (4)           Z
-						 | \   / |
-						 |  (3)  |
-						 |   |   |
-						 |  (6)  |
-						 | / | \ |
-						(7)  |  (b)
-						 |   |   |
-						(8)  |  (a)
-						   \ | /
-							(9)
-			*/
+			 *               (0)             Y
+			 *              /   \            |
+			 *           (1)     (5)         o---X
+			 *            |       |           \
+			 *           (2)     (4)           Z
+			 *            | \   / |
+			 *            |  (3)  |
+			 *            |   |   |
+			 *            |  (6)  |
+			 *            | / | \ |
+			 *           (7)  |  (b)
+			 *            |   |   |
+			 *           (8)  |  (a)
+			 *              \ | /
+			 *               (9)
+			 */
 
 			lines_array[RS::ARRAY_VERTEX] = Vector<Vector3>({
 					Vector3(0.0, 0.5, -1.0), // 0
@@ -1314,6 +1289,7 @@ void GridMapEditor::_build_selection_meshes() {
 			break;
 		default:
 			ERR_PRINT_ED("unsupported cell shape");
+			return;
 	}
 
 	RenderingServer *rs = RS::get_singleton();
