@@ -32,7 +32,7 @@
 #define GRID_MAP_H
 
 #include "scene/3d/node_3d.h"
-#include "scene/resources/mesh_library.h"
+#include "scene/resources/3d/mesh_library.h"
 
 // SQRT(3)/2; used both in the editor and the GridMap.  Due to the division, it
 // didn't fit the pattern of other Math_SQRTN defines, so I'm putting it here.
@@ -199,6 +199,7 @@ private:
 	}
 
 	void _update_physics_bodies_collision_properties();
+	void _update_physics_bodies_characteristics();
 	void _octant_enter_world(const OctantKey &p_key);
 	void _octant_exit_world(const OctantKey &p_key);
 	bool _octant_update(const OctantKey &p_key);

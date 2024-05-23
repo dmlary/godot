@@ -142,9 +142,7 @@ public:
 		RESOURCE_USAGE_TEXTURE_SAMPLE,
 		RESOURCE_USAGE_STORAGE_IMAGE_READ,
 		RESOURCE_USAGE_STORAGE_IMAGE_READ_WRITE,
-		RESOURCE_USAGE_ATTACHMENT_COLOR_READ,
 		RESOURCE_USAGE_ATTACHMENT_COLOR_READ_WRITE,
-		RESOURCE_USAGE_ATTACHMENT_DEPTH_STENCIL_READ,
 		RESOURCE_USAGE_ATTACHMENT_DEPTH_STENCIL_READ_WRITE
 	};
 
@@ -155,7 +153,9 @@ public:
 		int32_t read_slice_command_list_index = -1;
 		int32_t write_command_or_list_index = -1;
 		int32_t draw_list_index = -1;
+		ResourceUsage draw_list_usage = RESOURCE_USAGE_NONE;
 		int32_t compute_list_index = -1;
+		ResourceUsage compute_list_usage = RESOURCE_USAGE_NONE;
 		ResourceUsage usage = RESOURCE_USAGE_NONE;
 		BitField<RDD::BarrierAccessBits> usage_access;
 		RDD::BufferID buffer_driver_id;
@@ -182,6 +182,20 @@ public:
 				write_command_list_enabled = false;
 			}
 		}
+	};
+
+	struct CommandBufferPool {
+		// Provided by RenderingDevice.
+		RDD::CommandPoolID pool;
+
+		// Created internally by RenderingDeviceGraph.
+		LocalVector<RDD::CommandBufferID> buffers;
+		LocalVector<RDD::SemaphoreID> semaphores;
+		uint32_t buffers_used = 0;
+	};
+
+	struct WorkaroundsState {
+		bool draw_list_found = false;
 	};
 
 private:
@@ -560,6 +574,7 @@ private:
 	};
 
 	RDD *driver = nullptr;
+	RenderingContextDriver::Device device;
 	int64_t tracking_frame = 0;
 	LocalVector<uint8_t> command_data;
 	LocalVector<uint32_t> command_data_offsets;
@@ -582,6 +597,7 @@ private:
 	bool command_synchronization_pending = false;
 	BarrierGroup barrier_group;
 	bool driver_honors_barriers = false;
+	WorkaroundsState workarounds_state;
 	TightLocalVector<Frame> frames;
 	uint32_t frame = 0;
 
@@ -608,7 +624,7 @@ private:
 	void _run_draw_list_command(RDD::CommandBufferID p_command_buffer, const uint8_t *p_instruction_data, uint32_t p_instruction_data_size);
 	void _run_secondary_command_buffer_task(const SecondaryCommandBuffer *p_secondary);
 	void _wait_for_secondary_command_buffer_tasks();
-	void _run_render_commands(RDD::CommandBufferID p_command_buffer, int32_t p_level, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, int32_t &r_current_label_index, int32_t &r_current_label_level);
+	void _run_render_commands(int32_t p_level, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool, int32_t &r_current_label_index, int32_t &r_current_label_level);
 	void _run_label_command_change(RDD::CommandBufferID p_command_buffer, int32_t p_new_label_index, int32_t p_new_level, bool p_ignore_previous_value, bool p_use_label_for_empty, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, int32_t &r_current_label_index, int32_t &r_current_label_level);
 	void _boost_priority_for_render_commands(RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, uint32_t &r_boosted_priority);
 	void _group_barriers_for_render_commands(RDD::CommandBufferID p_command_buffer, const RecordedCommandSort *p_sorted_commands, uint32_t p_sorted_commands_count, bool p_full_memory_barrier);
@@ -619,7 +635,8 @@ private:
 public:
 	RenderingDeviceGraph();
 	~RenderingDeviceGraph();
-	void initialize(RDD *p_driver, uint32_t p_frame_count, uint32_t p_secondary_command_buffers_per_frame);
+	void initialize(RDD *p_driver, RenderingContextDriver::Device p_device, uint32_t p_frame_count, RDD::CommandQueueFamilyID p_secondary_command_queue_family, uint32_t p_secondary_command_buffers_per_frame);
+	void finalize();
 	void begin();
 	void add_buffer_clear(RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, uint32_t p_offset, uint32_t p_size);
 	void add_buffer_copy(RDD::BufferID p_src, ResourceTracker *p_src_tracker, RDD::BufferID p_dst, ResourceTracker *p_dst_tracker, RDD::BufferCopyRegion p_region);
@@ -663,7 +680,7 @@ public:
 	void add_synchronization();
 	void begin_label(const String &p_label_name, const Color &p_color);
 	void end_label();
-	void end(RDD::CommandBufferID p_command_buffer, bool p_reorder_commands, bool p_full_barriers);
+	void end(bool p_reorder_commands, bool p_full_barriers, RDD::CommandBufferID &r_command_buffer, CommandBufferPool &r_command_buffer_pool);
 	static ResourceTracker *resource_tracker_create();
 	static void resource_tracker_free(ResourceTracker *tracker);
 };

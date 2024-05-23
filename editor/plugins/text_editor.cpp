@@ -140,7 +140,7 @@ void TextEditor::enable_editor(Control *p_shortcut_context) {
 	}
 }
 
-void TextEditor::add_callback(const String &p_function, PackedStringArray p_args) {
+void TextEditor::add_callback(const String &p_function, const PackedStringArray &p_args) {
 }
 
 void TextEditor::set_debugger_active(bool p_active) {
@@ -148,6 +148,10 @@ void TextEditor::set_debugger_active(bool p_active) {
 
 Control *TextEditor::get_base_editor() const {
 	return code_editor->get_text_editor();
+}
+
+CodeTextEditor *TextEditor::get_code_editor() const {
+	return code_editor;
 }
 
 PackedInt32Array TextEditor::get_breakpoints() {
@@ -348,6 +352,7 @@ void TextEditor::set_find_replace_bar(FindReplaceBar *p_bar) {
 
 void TextEditor::_edit_option(int p_op) {
 	CodeEdit *tx = code_editor->get_text_editor();
+	tx->apply_ime();
 
 	switch (p_op) {
 		case EDIT_UNDO: {
@@ -375,10 +380,10 @@ void TextEditor::_edit_option(int p_op) {
 			callable_mp((Control *)tx, &Control::grab_focus).call_deferred();
 		} break;
 		case EDIT_MOVE_LINE_UP: {
-			code_editor->move_lines_up();
+			code_editor->get_text_editor()->move_lines_up();
 		} break;
 		case EDIT_MOVE_LINE_DOWN: {
-			code_editor->move_lines_down();
+			code_editor->get_text_editor()->move_lines_down();
 		} break;
 		case EDIT_INDENT: {
 			tx->indent_lines();
@@ -387,24 +392,16 @@ void TextEditor::_edit_option(int p_op) {
 			tx->unindent_lines();
 		} break;
 		case EDIT_DELETE_LINE: {
-			code_editor->delete_lines();
+			code_editor->get_text_editor()->delete_lines();
 		} break;
 		case EDIT_DUPLICATE_SELECTION: {
-			code_editor->duplicate_selection();
+			code_editor->get_text_editor()->duplicate_selection();
 		} break;
 		case EDIT_DUPLICATE_LINES: {
 			code_editor->get_text_editor()->duplicate_lines();
 		} break;
 		case EDIT_TOGGLE_FOLD_LINE: {
-			int previous_line = -1;
-			for (int caret_idx : tx->get_caret_index_edit_order()) {
-				int line_idx = tx->get_caret_line(caret_idx);
-				if (line_idx != previous_line) {
-					tx->toggle_foldable_line(line_idx);
-					previous_line = line_idx;
-				}
-			}
-			tx->queue_redraw();
+			tx->toggle_foldable_lines_at_carets();
 		} break;
 		case EDIT_FOLD_ALL_LINES: {
 			tx->fold_all_lines();
@@ -418,11 +415,11 @@ void TextEditor::_edit_option(int p_op) {
 			trim_trailing_whitespace();
 		} break;
 		case EDIT_CONVERT_INDENT_TO_SPACES: {
-			tx->set_indent_using_spaces(true);
+			code_editor->set_indent_using_spaces(true);
 			convert_indent();
 		} break;
 		case EDIT_CONVERT_INDENT_TO_TABS: {
-			tx->set_indent_using_spaces(false);
+			code_editor->set_indent_using_spaces(false);
 			convert_indent();
 		} break;
 		case EDIT_TO_UPPERCASE: {
@@ -502,6 +499,8 @@ void TextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 		if (mb->get_button_index() == MouseButton::RIGHT) {
 			CodeEdit *tx = code_editor->get_text_editor();
 
+			tx->apply_ime();
+
 			Point2i pos = tx->get_line_column_at_pos(mb->get_global_position() - tx->get_global_position());
 			int row = pos.y;
 			int col = pos.x;
@@ -524,7 +523,7 @@ void TextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 					}
 				}
 				if (!tx->has_selection()) {
-					tx->set_caret_line(row, true, false);
+					tx->set_caret_line(row, true, false, -1);
 					tx->set_caret_column(col);
 				}
 			}
@@ -604,7 +603,7 @@ TextEditor::TextEditor() {
 	update_settings();
 
 	code_editor->get_text_editor()->set_context_menu_enabled(false);
-	code_editor->get_text_editor()->connect("gui_input", callable_mp(this, &TextEditor::_text_edit_gui_input));
+	code_editor->get_text_editor()->connect(SceneStringName(gui_input), callable_mp(this, &TextEditor::_text_edit_gui_input));
 
 	context_menu = memnew(PopupMenu);
 	add_child(context_menu);
@@ -647,18 +646,14 @@ TextEditor::TextEditor() {
 
 	edit_menu->get_popup()->add_separator();
 	PopupMenu *convert_case = memnew(PopupMenu);
-	convert_case->set_name("ConvertCase");
-	edit_menu->get_popup()->add_child(convert_case);
-	edit_menu->get_popup()->add_submenu_item(TTR("Convert Case"), "ConvertCase");
-	convert_case->add_shortcut(ED_SHORTCUT("script_text_editor/convert_to_uppercase", TTR("Uppercase")), EDIT_TO_UPPERCASE);
-	convert_case->add_shortcut(ED_SHORTCUT("script_text_editor/convert_to_lowercase", TTR("Lowercase")), EDIT_TO_LOWERCASE);
-	convert_case->add_shortcut(ED_SHORTCUT("script_text_editor/capitalize", TTR("Capitalize")), EDIT_CAPITALIZE);
+	edit_menu->get_popup()->add_submenu_node_item(TTR("Convert Case"), convert_case);
+	convert_case->add_shortcut(ED_GET_SHORTCUT("script_text_editor/convert_to_uppercase"), EDIT_TO_UPPERCASE);
+	convert_case->add_shortcut(ED_GET_SHORTCUT("script_text_editor/convert_to_lowercase"), EDIT_TO_LOWERCASE);
+	convert_case->add_shortcut(ED_GET_SHORTCUT("script_text_editor/capitalize"), EDIT_CAPITALIZE);
 	convert_case->connect("id_pressed", callable_mp(this, &TextEditor::_edit_option));
 
 	highlighter_menu = memnew(PopupMenu);
-	highlighter_menu->set_name("HighlighterMenu");
-	edit_menu->get_popup()->add_child(highlighter_menu);
-	edit_menu->get_popup()->add_submenu_item(TTR("Syntax Highlighter"), "HighlighterMenu");
+	edit_menu->get_popup()->add_submenu_node_item(TTR("Syntax Highlighter"), highlighter_menu);
 	highlighter_menu->connect("id_pressed", callable_mp(this, &TextEditor::_change_syntax_highlighter));
 
 	Ref<EditorPlainTextSyntaxHighlighter> plain_highlighter;
@@ -696,9 +691,7 @@ TextEditor::TextEditor() {
 	goto_menu->get_popup()->add_separator();
 
 	bookmarks_menu = memnew(PopupMenu);
-	bookmarks_menu->set_name("BookmarksMenu");
-	goto_menu->get_popup()->add_child(bookmarks_menu);
-	goto_menu->get_popup()->add_submenu_item(TTR("Bookmarks"), "BookmarksMenu");
+	goto_menu->get_popup()->add_submenu_node_item(TTR("Bookmarks"), bookmarks_menu);
 	_update_bookmark_list();
 	bookmarks_menu->connect("about_to_popup", callable_mp(this, &TextEditor::_update_bookmark_list));
 	bookmarks_menu->connect("index_pressed", callable_mp(this, &TextEditor::_bookmark_item_pressed));
