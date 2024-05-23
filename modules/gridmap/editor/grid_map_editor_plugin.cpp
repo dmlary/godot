@@ -92,34 +92,34 @@ void GridMapEditor::_menu_option(int p_option) {
 			break;
 		case MENU_OPTION_ROTATE_AXIS_CW:
 			switch (edit_axis) {
-				case AXIS_Z:
+				case AXIS_R:
 					edit_axis = AXIS_Q;
 					break;
 				case AXIS_Q:
-					edit_axis = AXIS_R;
+					edit_axis = AXIS_X;
 					break;
-				case AXIS_R:
+				case AXIS_X:
 					edit_axis = AXIS_S;
 					break;
 				default:
-					edit_axis = AXIS_Z;
+					edit_axis = AXIS_R;
 					break;
 			}
 			update_grid();
 			break;
 		case MENU_OPTION_ROTATE_AXIS_CCW:
 			switch (edit_axis) {
-				case AXIS_R:
+				case AXIS_X:
 					edit_axis = AXIS_Q;
 					break;
 				case AXIS_Q:
-					edit_axis = AXIS_Z;
+					edit_axis = AXIS_R;
 					break;
-				case AXIS_Z:
+				case AXIS_R:
 					edit_axis = AXIS_S;
 					break;
 				default:
-					edit_axis = AXIS_R;
+					edit_axis = AXIS_X;
 					break;
 			}
 			update_grid();
@@ -1010,6 +1010,11 @@ void GridMapEditor::update_grid() {
 	Vector3 cell_size = node->get_cell_size();
 	bool is_hex = node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON;
 
+	// Hex planes Q, R, and S need to offset the grid by half a cell on even
+	// numbered floors.  We calculate this value here to simplify the code
+	// later.
+	int is_even_floor = (edit_floor[edit_axis] & 1) == 0;
+
 	// hide the active grid
 	rs->instance_set_visible(active_grid_instance, false);
 
@@ -1019,36 +1024,49 @@ void GridMapEditor::update_grid() {
 
 	// switch the edit plane and pick the new active grid and rotate if necessary
 	switch (edit_axis) {
-		case AXIS_X: // also hex AXIS_R
-			edit_plane.normal = Vector3(1, 0, 0);
+		case AXIS_X:
+			// set which grid to display
 			active_grid_instance = grid_instance[0];
-			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.z;
-			menu_axis = is_hex ? MENU_OPTION_R_AXIS : MENU_OPTION_X_AXIS;
+			// set the edit plane normal, and cell depth (used by the plane)
+			edit_plane.normal = Vector3(1, 0, 0);
+			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.x;
+			// update the menu
+			menu_axis = MENU_OPTION_X_AXIS;
 			break;
 		case AXIS_Y:
-			edit_plane.normal = Vector3(0, 1, 0);
 			active_grid_instance = grid_instance[1];
-			cell_depth = node->get_cell_size().y;
+			edit_plane.normal = Vector3(0, 1, 0);
+			cell_depth = cell_size.y;
 			menu_axis = MENU_OPTION_Y_AXIS;
 			break;
 		case AXIS_Z:
-			edit_plane.normal = Vector3(0, 0, 1);
 			active_grid_instance = grid_instance[2];
-			cell_depth = is_hex ? (1.5 * cell_size.x) : cell_size.x;
+			edit_plane.normal = Vector3(0, 0, 1);
+			cell_depth = cell_size.z;
 			menu_axis = MENU_OPTION_Z_AXIS;
 			break;
-		case AXIS_Q:
-			edit_plane.normal = Vector3(SQRT3_2, 0, -0.5).normalized();
+		case AXIS_Q: // hex plane, northwest to southeast
 			active_grid_instance = grid_instance[2];
+			edit_plane.normal = Vector3(SQRT3_2, 0, -0.5).normalized();
 			cell_depth = 1.5 * cell_size.x;
 			grid_transform.rotate(Vector3(0, 1, 0), -Math_PI / 3.0);
+			// offset even numbered floors by half a cell
+			grid_transform.translate_local(Vector3(is_even_floor * SQRT3_2 * cell_size.x, 0, 0));
 			menu_axis = MENU_OPTION_Q_AXIS;
 			break;
-		case AXIS_S:
-			edit_plane.normal = Vector3(SQRT3_2, 0, 0.5).normalized();
+		case AXIS_R: // hex plane, east to west; same as AXIS_Z, but for hex
 			active_grid_instance = grid_instance[2];
+			edit_plane.normal = Vector3(0, 0, 1);
+			cell_depth = 1.5 * cell_size.x;
+			grid_transform.translate_local(Vector3(is_even_floor * SQRT3_2 * cell_size.x, 0, 0));
+			menu_axis = MENU_OPTION_R_AXIS;
+			break;
+		case AXIS_S: // hex plane, southwest to northeast
+			active_grid_instance = grid_instance[2];
+			edit_plane.normal = Vector3(SQRT3_2, 0, 0.5).normalized();
 			cell_depth = 1.5 * cell_size.x;
 			grid_transform.rotate(Vector3(0, 1, 0), Math_PI / 3.0);
+			grid_transform.translate_local(Vector3(is_even_floor * SQRT3_2 * cell_size.x, 0, 0));
 			menu_axis = MENU_OPTION_S_AXIS;
 			break;
 		default:
@@ -1059,7 +1077,7 @@ void GridMapEditor::update_grid() {
 	// update the depth of the edit plane so it matches the floor, and update
 	// the grid transform for the depth.
 	edit_plane.d = edit_floor[edit_axis] * cell_depth;
-	grid_transform.origin = edit_plane.normal * edit_plane.d;
+	grid_transform.origin += edit_plane.normal * edit_plane.d;
 
 	// shift the edit plane a little into the cell to prevent floating point
 	// errors from causing the raycast to fall into the lower cell.  Note we
@@ -1089,39 +1107,24 @@ void GridMapEditor::update_grid() {
 	}
 }
 
-void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
+void GridMapEditor::_draw_hex_grid(RID p_mesh_id, const Vector3 &p_cell_size) {
 	Vector<Vector2> shape_points;
-	if (node->get_cell_shape() == GridMap::CELL_SHAPE_SQUARE) {
-		shape_points.append(Vector2(-0.5, -0.5));
-		shape_points.append(Vector2(0.5, -0.5));
-		shape_points.append(Vector2(0.5, 0.5));
-		shape_points.append(Vector2(-0.5, 0.5));
-	} else {
-		shape_points.append(Vector2(0.0, -1.0));
-		shape_points.append(Vector2(-SQRT3_2, -0.5));
-		shape_points.append(Vector2(-SQRT3_2, 0.5));
-		shape_points.append(Vector2(0.0, 1.0));
-		shape_points.append(Vector2(SQRT3_2, 0.5));
-		shape_points.append(Vector2(SQRT3_2, -0.5));
-	}
-
-	Vector3 cell_size = node->get_cell_size();
+	shape_points.append(Vector2(0.0, -1.0));
+	shape_points.append(Vector2(-SQRT3_2, -0.5));
+	shape_points.append(Vector2(-SQRT3_2, 0.5));
+	shape_points.append(Vector2(0.0, 1.0));
+	shape_points.append(Vector2(SQRT3_2, 0.5));
+	shape_points.append(Vector2(SQRT3_2, -0.5));
 
 	Vector<Vector3> grid_points;
-	Vector<Color> grid_colors;
 
 	for (int x = -GRID_CURSOR_SIZE; x <= GRID_CURSOR_SIZE; x++) {
 		for (int z = -GRID_CURSOR_SIZE; z <= GRID_CURSOR_SIZE; z++) {
 			Vector3 center = node->map_to_local(Vector3(x, 0, z));
 
 			for (int i = 1; i < shape_points.size(); i++) {
-				grid_points.append(center + Vector3(shape_points[i - 1].x * cell_size.x, 0, shape_points[i - 1].y * cell_size.z));
-				grid_points.append(center + Vector3(shape_points[i].x * cell_size.x, 0, shape_points[i].y * cell_size.z));
-
-				float a1 = Math::pow(MAX(0, 1.0 - (Vector2(x + 1, z).length() / GRID_CURSOR_SIZE)), 2);
-				float a2 = Math::pow(MAX(0, 1.0 - (Vector2(x, z + 1).length() / GRID_CURSOR_SIZE)), 2);
-				grid_colors.append(Color(1, 1, 1, a1));
-				grid_colors.append(Color(1, 1, 1, a2));
+				grid_points.append(center + Vector3(shape_points[i - 1].x * p_cell_size.x, 0, shape_points[i - 1].y * p_cell_size.z));
+				grid_points.append(center + Vector3(shape_points[i].x * p_cell_size.x, 0, shape_points[i].y * p_cell_size.z));
 			}
 		}
 	}
@@ -1129,50 +1132,39 @@ void GridMapEditor::_draw_floor_grid(RID p_mesh_id) {
 	Array d;
 	d.resize(RS::ARRAY_MAX);
 	d[RS::ARRAY_VERTEX] = grid_points;
-	d[RS::ARRAY_COLOR] = grid_colors;
 	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(p_mesh_id, RenderingServer::PRIMITIVE_LINES, d);
 	RenderingServer::get_singleton()->mesh_surface_set_material(p_mesh_id, 0, indicator_mat->get_rid());
 }
 
-void GridMapEditor::_draw_plane_grid(RID p_mesh_id, const Vector3 &p_axis_n1, const Vector3 &p_axis_n2) {
+void GridMapEditor::_draw_plane_grid(
+		RID p_mesh_id,
+		const Vector3 &p_axis_n1,
+		const Vector3 &p_axis_n2,
+		const Vector3 &cell_size) {
 	Vector<Vector3> grid_points;
-	Vector<Color> grid_colors;
 
-	Vector3 cell_size = node->get_cell_size();
 	Vector3 axis_n1 = p_axis_n1 * cell_size;
 	Vector3 axis_n2 = p_axis_n2 * cell_size;
-
-	if (node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON) {
-		axis_n1 *= Math_SQRT3;
-	}
 
 	for (int j = -GRID_CURSOR_SIZE; j <= GRID_CURSOR_SIZE; j++) {
 		for (int k = -GRID_CURSOR_SIZE; k <= GRID_CURSOR_SIZE; k++) {
 			Vector3 p = axis_n1 * j + axis_n2 * k;
-			float trans = Math::pow(MAX(0, 1.0 - (Vector2(j, k).length() / GRID_CURSOR_SIZE)), 2);
 
 			Vector3 pj = axis_n1 * (j + 1) + axis_n2 * k;
-			float transj = Math::pow(MAX(0, 1.0 - (Vector2(j + 1, k).length() / GRID_CURSOR_SIZE)), 2);
 
 			Vector3 pk = axis_n1 * j + axis_n2 * (k + 1);
-			float transk = Math::pow(MAX(0, 1.0 - (Vector2(j, k + 1).length() / GRID_CURSOR_SIZE)), 2);
 
 			grid_points.push_back(p);
 			grid_points.push_back(pk);
-			grid_colors.push_back(Color(1, 1, 1, trans));
-			grid_colors.push_back(Color(1, 1, 1, transk));
 
 			grid_points.push_back(p);
 			grid_points.push_back(pj);
-			grid_colors.push_back(Color(1, 1, 1, trans));
-			grid_colors.push_back(Color(1, 1, 1, transj));
 		}
 	}
 
 	Array d;
 	d.resize(RS::ARRAY_MAX);
 	d[RS::ARRAY_VERTEX] = grid_points;
-	d[RS::ARRAY_COLOR] = grid_colors;
 	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(p_mesh_id, RenderingServer::PRIMITIVE_LINES, d);
 	RenderingServer::get_singleton()->mesh_surface_set_material(p_mesh_id, 0, indicator_mat->get_rid());
 }
@@ -1182,9 +1174,24 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 		RS::get_singleton()->mesh_clear(grid_mesh[i]);
 	}
 
-	_draw_plane_grid(grid_mesh[0], Vector3(0, 1, 0), Vector3(0, 0, 1));
-	_draw_floor_grid(grid_mesh[1]);
-	_draw_plane_grid(grid_mesh[2], Vector3(1, 0, 0), Vector3(0, 1, 0));
+	switch (node->get_cell_shape()) {
+		case GridMap::CELL_SHAPE_SQUARE:
+			_draw_plane_grid(grid_mesh[0], Vector3(0, 1, 0), Vector3(0, 0, 1), p_cell_size);
+			_draw_plane_grid(grid_mesh[1], Vector3(1, 0, 0), Vector3(0, 0, 1), p_cell_size);
+			_draw_plane_grid(grid_mesh[2], Vector3(1, 0, 0), Vector3(0, 1, 0), p_cell_size);
+			break;
+		case GridMap::CELL_SHAPE_HEXAGON: {
+			real_t radius = p_cell_size.x;
+			Vector3 cell_size = Vector3(Math_SQRT3 * radius, p_cell_size.y, Math_SQRT3 * radius);
+			_draw_plane_grid(grid_mesh[0], Vector3(0, 1, 0), Vector3(0, 0, 1), cell_size);
+			_draw_hex_grid(grid_mesh[1], p_cell_size);
+			_draw_plane_grid(grid_mesh[2], Vector3(1, 0, 0), Vector3(0, 1, 0), cell_size);
+			break;
+		}
+		default:
+			ERR_PRINT_ED("unsupported cell shape");
+			return;
+	}
 }
 
 void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
@@ -1447,11 +1454,11 @@ void GridMapEditor::_update_options_menu() {
 	if (node && node->get_cell_shape() == GridMap::CELL_SHAPE_HEXAGON) {
 		// hex cells have five edit axis; we add shortcuts for Y, two more for
 		// rotating a vertical plane clockwise and counter clockwise.
-		popup->add_radio_check_item(TTR("Edit Q Axis"), MENU_OPTION_Q_AXIS);
-		popup->add_radio_check_item(TTR("Edit R Axis"), MENU_OPTION_R_AXIS);
-		popup->add_radio_check_item(TTR("Edit S Axis"), MENU_OPTION_S_AXIS);
+		popup->add_radio_check_item(TTR("Edit X Axis"), MENU_OPTION_X_AXIS);
 		popup->add_radio_check_shortcut(ED_GET_SHORTCUT("grid_map/edit_y_axis"), MENU_OPTION_Y_AXIS);
-		popup->add_radio_check_item(TTR("Edit Z Axis"), MENU_OPTION_Z_AXIS);
+		popup->add_radio_check_item(TTR("Edit Q Axis"), MENU_OPTION_Q_AXIS);
+		popup->add_radio_check_item(TTR("Edit R Axis (Z Axis)"), MENU_OPTION_R_AXIS);
+		popup->add_radio_check_item(TTR("Edit S Axis"), MENU_OPTION_S_AXIS);
 		popup->add_shortcut(ED_GET_SHORTCUT("grid_map/edit_plane_rotate_cw"), MENU_OPTION_ROTATE_AXIS_CW);
 		popup->add_shortcut(ED_GET_SHORTCUT("grid_map/edit_plane_rotate_ccw"), MENU_OPTION_ROTATE_AXIS_CCW);
 	} else {

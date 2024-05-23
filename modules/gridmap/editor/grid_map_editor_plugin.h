@@ -103,10 +103,10 @@ class GridMapEditor : public VBoxContainer {
 
 	enum EditAxis {
 		AXIS_X = 0,
-		AXIS_R = AXIS_X, // axial hex coordinates east/west
 		AXIS_Y,
 		AXIS_Z,
 		AXIS_Q, // axial hex coordinates northwest/southeast
+		AXIS_R, // axial hex coordinates east/west
 		AXIS_S, // axial hex coordinates northeast/southwest
 		AXIS_MAX,
 	};
@@ -197,8 +197,8 @@ class GridMapEditor : public VBoxContainer {
 	Label *info_message = nullptr;
 
 	void update_grid(); // Change which and where the grid is displayed
-	void _draw_floor_grid(RID p_grid);
-	void _draw_plane_grid(RID p_grid, const Vector3 &p_axis_n1, const Vector3 &p_axis_n2);
+	void _draw_hex_grid(RID p_grid, const Vector3 &p_cell_size);
+	void _draw_plane_grid(RID p_grid, const Vector3 &p_axis_n1, const Vector3 &p_axis_n2, const Vector3 &p_cell_size);
 	void _draw_grids(const Vector3 &p_cell_size);
 	void _update_cell_shape(const GridMap::CellShape cell_shape);
 	void _update_options_menu();
