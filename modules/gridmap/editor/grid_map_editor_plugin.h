@@ -132,8 +132,6 @@ class GridMapEditor : public VBoxContainer {
 	Ref<StandardMaterial3D> outer_mat;
 
 	struct Selection {
-		Vector3 click;
-		Vector3 current;
 		Vector3 begin;
 		Vector3 end;
 		bool active = false;
@@ -223,8 +221,7 @@ class GridMapEditor : public VBoxContainer {
 	void _set_clipboard_data();
 	void _update_paste_indicator();
 	void _do_paste();
-	void _update_selection_transform();
-	void _validate_selection();
+	void _update_selection();
 	void _set_selection(bool p_active, const Vector3 &p_begin = Vector3(), const Vector3 &p_end = Vector3());
 
 	void _floor_changed(float p_value);

@@ -301,14 +301,13 @@ void GridMapEditor::_update_cursor_transform() {
 	}
 }
 
-void GridMapEditor::_update_selection_transform() {
+void GridMapEditor::_update_selection() {
 	RenderingServer *rs = RS::get_singleton();
 
-	// to simplify the code, just clear the existing selection cells each time
-	// we're called
 	if (selection_instance.is_valid()) {
 		rs->free(selection_instance);
 	}
+
 	if (!selection.active) {
 		return;
 	}
@@ -322,6 +321,10 @@ void GridMapEditor::_update_selection_transform() {
 										 .scaled_local(node->get_cell_size())
 										 .translated(Vector3(0, node->get_center_y() ? 0 : (node->get_cell_size().y / 2.0), 0));
 
+	// when performing selection on the Q & S axis (hex shaped cells) we need
+	// the begin cell index to limit the selection to the desired plane.
+	Vector3i begin = node->local_to_map(selection.begin);
+
 	// get the cells in our selection area
 	TypedArray<Vector3i> cells = node->local_region_to_map(selection.begin, selection.end);
 
@@ -329,6 +332,21 @@ void GridMapEditor::_update_selection_transform() {
 	rs->multimesh_allocate_data(selection_multimesh, cells.size(), RS::MULTIMESH_TRANSFORM_3D);
 	for (int i = 0; i < cells.size(); i++) {
 		Vector3i cell = cells[i];
+		switch (edit_axis) {
+			case AXIS_Q:
+				if (cell.x != begin.x) {
+					continue;
+				}
+				break;
+			case AXIS_S:
+				if (-cell.x - cell.z != -begin.x - begin.z) {
+					continue;
+				}
+				break;
+
+			default:
+				break;
+		}
 		rs->multimesh_instance_set_transform(selection_multimesh, i,
 				cell_transform.translated(node->map_to_local(cell)));
 	}
@@ -339,35 +357,13 @@ void GridMapEditor::_update_selection_transform() {
 	rs->instance_set_layer_mask(selection_instance, Node3DEditorViewport::MISC_TOOL_LAYER);
 }
 
-void GridMapEditor::_validate_selection() {
-	if (!selection.active) {
-		return;
-	}
-	selection.begin = selection.click;
-	selection.end = selection.current;
-
-	if (selection.begin.x > selection.end.x) {
-		SWAP(selection.begin.x, selection.end.x);
-	}
-	if (selection.begin.y > selection.end.y) {
-		SWAP(selection.begin.y, selection.end.y);
-	}
-	if (selection.begin.z > selection.end.z) {
-		SWAP(selection.begin.z, selection.end.z);
-	}
-
-	_update_selection_transform();
-}
-
 void GridMapEditor::_set_selection(bool p_active, const Vector3 &p_begin, const Vector3 &p_end) {
 	selection.active = p_active;
 	selection.begin = p_begin;
 	selection.end = p_end;
-	selection.click = p_begin;
-	selection.current = p_end;
 
 	if (is_visible_in_tree()) {
-		_update_selection_transform();
+		_update_selection();
 	}
 
 	options->get_popup()->set_item_disabled(options->get_popup()->get_item_index(MENU_OPTION_SELECTION_CLEAR), !selection.active);
@@ -431,12 +427,12 @@ bool GridMapEditor::do_input_action(Camera3D *p_camera, const Point2 &p_point, b
 		_update_paste_indicator();
 
 	} else if (input_action == INPUT_SELECT) {
-		selection.current = inters;
 		if (p_click) {
-			selection.click = selection.current;
+			selection.begin = inters;
 		}
+		selection.end = inters;
 		selection.active = true;
-		_validate_selection();
+		_update_selection();
 
 		return true;
 	} else if (input_action == INPUT_PICK) {
@@ -967,7 +963,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 	input_action = INPUT_NONE;
 	selection.active = false;
 	_build_selection_meshes();
-	_update_selection_transform();
+	_update_selection();
 	_update_paste_indicator();
 	_update_options_menu();
 
@@ -1197,7 +1193,10 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 void GridMapEditor::_update_cell_shape(const GridMap::CellShape cell_shape) {
 	_draw_grids(node->get_cell_size());
 	_build_selection_meshes();
+	edit_axis = AXIS_Y;
 	_update_options_menu();
+	selection.active = false;
+	_update_selection();
 }
 
 void GridMapEditor::_build_selection_meshes() {
@@ -1330,7 +1329,7 @@ void GridMapEditor::_notification(int p_what) {
 				RenderingServer::get_singleton()->instance_set_layer_mask(grid_instance[i], 1 << Node3DEditorViewport::MISC_TOOL_LAYER);
 				RenderingServer::get_singleton()->instance_set_visible(grid_instance[i], false);
 			}
-			_update_selection_transform();
+			_update_selection();
 			_update_paste_indicator();
 			_update_theme();
 			_update_options_menu();
@@ -1347,7 +1346,7 @@ void GridMapEditor::_notification(int p_what) {
 			}
 
 			selection.active = false;
-			_update_selection_transform();
+			_update_selection();
 		} break;
 
 		case NOTIFICATION_PROCESS: {
@@ -1361,7 +1360,7 @@ void GridMapEditor::_notification(int p_what) {
 			if (transform != node_global_transform) {
 				node_global_transform = transform;
 				update_grid();
-				_update_selection_transform();
+				_update_selection();
 			}
 		} break;
 
@@ -1421,7 +1420,7 @@ void GridMapEditor::_floor_changed(float p_value) {
 	node->set_meta("_editor_floor_", floors);
 
 	update_grid();
-	_update_selection_transform();
+	_update_selection();
 }
 
 void GridMapEditor::_floor_mouse_exited() {
