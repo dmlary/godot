@@ -1026,6 +1026,10 @@ void GridMapEditor::update_grid() {
 			// set the edit plane normal, and cell depth (used by the plane)
 			edit_plane.normal = Vector3(1, 0, 0);
 			cell_depth = is_hex ? (SQRT3_2 * cell_size.x) : cell_size.x;
+			// shift the edit grid based on which floor we are on
+			if (is_hex && !is_even_floor) {
+				grid_transform.translate_local(Vector3(0, 0, 1.5 * cell_size.x));
+			}
 			// update the menu
 			menu_axis = MENU_OPTION_X_AXIS;
 			break;
@@ -1046,7 +1050,7 @@ void GridMapEditor::update_grid() {
 			edit_plane.normal = Vector3(SQRT3_2, 0, -0.5).normalized();
 			cell_depth = 1.5 * cell_size.x;
 			grid_transform.rotate(Vector3(0, 1, 0), -Math_PI / 3.0);
-			// offset even numbered floors by half a cell
+			// offset the edit grid on even numbered floors by half a cell
 			grid_transform.translate_local(Vector3(is_even_floor * SQRT3_2 * cell_size.x, 0, 0));
 			menu_axis = MENU_OPTION_Q_AXIS;
 			break;
@@ -1078,9 +1082,9 @@ void GridMapEditor::update_grid() {
 	// shift the edit plane a little into the cell to prevent floating point
 	// errors from causing the raycast to fall into the lower cell.  Note we
 	// only need to do this when the grid is drawn along the edge of a cell,
-	// so the Y axis, or any square shape cell.  Hex cells draw the grid through
-	// the middle of the cells for non-Y,
-	if (edit_axis == AXIS_Y || !is_hex) {
+	// so the Y & X axis, or any square shape cell.  Hex cells draw the grid
+	// through the middle of the cells for Q/R/S.
+	if (edit_axis == AXIS_Y || edit_axis == AXIS_X || !is_hex) {
 		edit_plane.d += cell_depth * 0.1;
 	}
 
@@ -1104,25 +1108,72 @@ void GridMapEditor::update_grid() {
 }
 
 void GridMapEditor::_draw_hex_grid(RID p_mesh_id, const Vector3 &p_cell_size) {
-	Vector<Vector2> shape_points;
-	shape_points.append(Vector2(0.0, -1.0));
-	shape_points.append(Vector2(-SQRT3_2, -0.5));
-	shape_points.append(Vector2(-SQRT3_2, 0.5));
-	shape_points.append(Vector2(0.0, 1.0));
-	shape_points.append(Vector2(SQRT3_2, 0.5));
-	shape_points.append(Vector2(SQRT3_2, -0.5));
+	// create the points that make up the top of a hex cell
+	Vector<Vector3> shape_points;
+	shape_points.append(Vector3(0.0, 0, -1.0) * p_cell_size);
+	shape_points.append(Vector3(-SQRT3_2, 0, -0.5) * p_cell_size);
+	shape_points.append(Vector3(-SQRT3_2, 0, 0.5) * p_cell_size);
+	shape_points.append(Vector3(0.0, 0, 1.0) * p_cell_size);
+	shape_points.append(Vector3(SQRT3_2, 0, 0.5) * p_cell_size);
+	shape_points.append(Vector3(SQRT3_2, 0, -0.5) * p_cell_size);
 
 	Vector<Vector3> grid_points;
+	TypedArray<Vector3i> cells = node->local_region_to_map(
+			Vector3i(-GRID_CURSOR_SIZE * Math_SQRT3 * p_cell_size.x,
+					0,
+					-GRID_CURSOR_SIZE * 1.625 * p_cell_size.x),
+			Vector3i(GRID_CURSOR_SIZE * Math_SQRT3 * p_cell_size.x,
+					0,
+					GRID_CURSOR_SIZE * 1.625 * p_cell_size.x));
+	for (int i = 0; i < cells.size(); i++) {
+		Vector3i cell = cells[i];
+		Vector3 center = node->map_to_local(cell);
 
-	for (int x = -GRID_CURSOR_SIZE; x <= GRID_CURSOR_SIZE; x++) {
-		for (int z = -GRID_CURSOR_SIZE; z <= GRID_CURSOR_SIZE; z++) {
-			Vector3 center = node->map_to_local(Vector3(x, 0, z));
-
-			for (int i = 1; i < shape_points.size(); i++) {
-				grid_points.append(center + Vector3(shape_points[i - 1].x * p_cell_size.x, 0, shape_points[i - 1].y * p_cell_size.z));
-				grid_points.append(center + Vector3(shape_points[i].x * p_cell_size.x, 0, shape_points[i].y * p_cell_size.z));
-			}
+		for (int i = 1; i < shape_points.size(); i++) {
+			grid_points.append(center + shape_points[i - 1]);
+			grid_points.append(center + shape_points[i]);
 		}
+	}
+
+	Array d;
+	d.resize(RS::ARRAY_MAX);
+	d[RS::ARRAY_VERTEX] = grid_points;
+	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(p_mesh_id, RenderingServer::PRIMITIVE_LINES, d);
+	RenderingServer::get_singleton()->mesh_surface_set_material(p_mesh_id, 0, indicator_mat->get_rid());
+}
+
+void GridMapEditor::_draw_hex_x_axis_grid(RID p_mesh_id, const Vector3 &p_cell_size) {
+	Vector<Vector3> grid_points;
+
+	// draw horizontal lines
+	for (int y_index = -GRID_CURSOR_SIZE; y_index <= GRID_CURSOR_SIZE; y_index++) {
+		real_t y = y_index * p_cell_size.y;
+		grid_points.append(Vector3(0, y, -GRID_CURSOR_SIZE * 1.625 * p_cell_size.x));
+		grid_points.append(Vector3(0, y, GRID_CURSOR_SIZE * 1.625 * p_cell_size.x));
+	}
+
+	// for vertical lines, we'll need to know where the center of the cell is
+	// for a line along the Z axis.
+	TypedArray<Vector3i> cells = node->local_region_to_map(
+			Vector3(0, 0.001, -GRID_CURSOR_SIZE * 1.625 * p_cell_size.x),
+			Vector3(0, 0.002, GRID_CURSOR_SIZE * 1.625 * p_cell_size.x));
+
+	// use the cell list to draw the vertical lines
+	for (int i = 0; i < cells.size(); i++) {
+		// grab the z coordinate for the center of the cell
+		Vector3i cell = cells[i];
+		real_t z = node->map_to_local(cell).z;
+
+		// Adjust from the center of the cell to where the line should fall.
+		// We're drawing lines at 1 radius, then 2 radius appart, alternating.
+		if ((cell.z & 1) == 0) {
+			z += p_cell_size.x;
+		} else {
+			z += p_cell_size.x / 2;
+		}
+
+		grid_points.append(Vector3(0, -GRID_CURSOR_SIZE * p_cell_size.y, z));
+		grid_points.append(Vector3(0, GRID_CURSOR_SIZE * p_cell_size.y, z));
 	}
 
 	Array d;
@@ -1179,7 +1230,7 @@ void GridMapEditor::_draw_grids(const Vector3 &p_cell_size) {
 		case GridMap::CELL_SHAPE_HEXAGON: {
 			real_t radius = p_cell_size.x;
 			Vector3 cell_size = Vector3(Math_SQRT3 * radius, p_cell_size.y, Math_SQRT3 * radius);
-			_draw_plane_grid(grid_mesh[0], Vector3(0, 1, 0), Vector3(0, 0, 1), cell_size);
+			_draw_hex_x_axis_grid(grid_mesh[0], p_cell_size);
 			_draw_hex_grid(grid_mesh[1], p_cell_size);
 			_draw_plane_grid(grid_mesh[2], Vector3(1, 0, 0), Vector3(0, 1, 0), cell_size);
 			break;
